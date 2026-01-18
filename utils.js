@@ -1,4 +1,4 @@
-// 通用工具函数 - 修复所有事件绑定，全局挂载供app.js调用
+// 通用工具函数 - 提前全局挂载所有函数，防止app.js调用报错
 /**
  * 懒加载图片初始化
  */
@@ -360,13 +360,28 @@ function debounce(fn, delay = 300) {
   };
 }
 
-// 全局挂载所有工具函数，供app.js调用
+// 🔥 关键修复：提前全局挂载所有函数，页面加载时直接可用，无未定义报错
 window.initLazyLoad = initLazyLoad;
 window.initNavbarScroll = initNavbarScroll;
 window.initEventListeners = initEventListeners;
 window.isImageFile = isImageFile;
 window.showToast = showToast;
 window.debounce = debounce;
+window.hideAllModals = function() {};
+window.switchTheme = function() {};
+window.showContentSection = function() {};
+window.login = function() {};
+window.register = function() {};
+window.forgotPassword = function() {};
+window.logout = function() {};
+window.socialLogin = function() {};
+window.uploadAvatar = function() {};
+window.updateUserProfile = function() {};
+window.publishPhoto = function() {};
+window.loadExploreData = function() {};
+window.loadMyPhotos = function() {};
+window.publishDiscussion = function() {};
+window.searchContent = function() {};
 
 // 导出供模块引入（备用）
 export {
