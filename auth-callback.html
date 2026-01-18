@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认证回调 - 光影分享</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .auth-callback-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--gradient-dark);
+            padding: 20px;
+        }
+        
+        .auth-callback-card {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-xl);
+            padding: 40px;
+            text-align: center;
+            box-shadow: var(--shadow-xl);
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .auth-callback-icon {
+            font-size: 4rem;
+            color: var(--accent-primary);
+            margin-bottom: 20px;
+        }
+        
+        .auth-callback-title {
+            font-size: 1.75rem;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+        
+        .auth-callback-message {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .spinner-large {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .auth-callback-error {
+            color: var(--accent-danger);
+            background: rgba(239, 68, 68, 0.1);
+            padding: 15px;
+            border-radius: var(--radius-md);
+            margin-top: 20px;
+        }
+        
+        .auth-callback-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+        
+        .auth-callback-buttons .btn {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-callback-container">
+        <div class="auth-callback-card">
+            <div class="auth-callback-icon">
+                <i class="fas fa-user-check"></i>
+            </div>
+            
+            <h1 class="auth-callback-title" id="callback-title">认证中...</h1>
+            
+            <p class="auth-callback-message" id="callback-message">
+                正在处理您的登录请求，请稍候...
+            </p>
+            
+            <div class="spinner-large" id="callback-spinner"></div>
+            
+            <div class="auth-callback-error hidden" id="callback-error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="error-message"></span>
+            </div>
+            
+            <div class="auth-callback-buttons hidden" id="callback-buttons">
+                <button class="btn btn-primary" id="retry-btn">
+                    <i class="fas fa-redo"></i>
+                    <span>重试</span>
+                </button>
+                <button class="btn btn-outline" id="home-btn">
+                    <i class="fas fa-home"></i>
+                    <span>返回首页</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js" type="module"></script>
+    <script>
+        // 导入配置
+        import { supabase } from './config.js';
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // 处理OAuth回调
+                const hash = window.location.hash;
+                
+                if (hash.includes('access_token') || hash.includes('error')) {
+                    await handleOAuthCallback();
+                } else {
+                    // 没有OAuth参数，可能是直接访问
+                    showSuccess('即将跳转到首页...');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('认证回调处理失败:', error);
+                showError('认证处理失败: ' + error.message);
+            }
+        });
+        
+        async function handleOAuthCallback() {
+            try {
+                const { data, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    throw error;
+                }
+                
+                if (data.session) {
+                    showSuccess('登录成功！即将跳转...');
+                    
+                    // 等待一下让用户看到成功消息
+                    setTimeout(() => {
+                        // 检查是否有重定向URL
+                        const redirectTo = localStorage.getItem('redirectAfterAuth') || 'index.html';
+                        localStorage.removeItem('redirectAfterAuth');
+                        window.location.href = redirectTo;
+                    }, 1500);
+                } else {
+                    throw new Error('未能获取会话信息');
+                }
+            } catch (error) {
+                console.error('OAuth回调处理失败:', error);
+                
+                // 检查是否是邮箱验证
+                if (window.location.search.includes('type=signup')) {
+                    showSuccess('注册成功！请检查您的邮箱以验证账户。');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 3000);
+                } else {
+                    showError('认证失败: ' + error.message);
+                }
+            }
+        }
+        
+        function showSuccess(message) {
+            document.getElementById('callback-title').textContent = '成功！';
+            document.getElementById('callback-message').textContent = message;
+            document.getElementById('callback-spinner').classList.add('hidden');
+        }
+        
+        function showError(message) {
+            document.getElementById('callback-title').textContent = '出错了';
+            document.getElementById('callback-message').textContent = '认证过程中出现了问题';
+            document.getElementById('callback-spinner').classList.add('hidden');
+            
+            const errorElement = document.getElementById('callback-error');
+            document.getElementById('error-message').textContent = message;
+            errorElement.classList.remove('hidden');
+            
+            document.getElementById('callback-buttons').classList.remove('hidden');
+        }
+        
+        // 绑定按钮事件
+        document.getElementById('retry-btn')?.addEventListener('click', () => {
+            window.location.reload();
+        });
+        
+        document.getElementById('home-btn')?.addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+    </script>
+</body>
+</html>

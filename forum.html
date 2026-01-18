@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>讨论交流区 - 光影分享</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-camera"></i>
+                    <span>光影分享</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">
+                    <i class="fas fa-home"></i>
+                    <span class="nav-text">首页</span>
+                </a>
+                <a href="#back" class="nav-link" onclick="window.history.back(); return false;">
+                    <i class="fas fa-arrow-left"></i>
+                    <span class="nav-text">返回</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 论坛页面内容 -->
+    <main class="forum-page">
+        <div class="forum-container">
+            <div class="forum-header">
+                <h1><i class="fas fa-comments"></i> 讨论交流区</h1>
+                <p class="forum-subtitle">与摄影师们分享经验、提问和讨论</p>
+                
+                <button class="btn btn-primary create-post-btn" id="create-post-btn">
+                    <i class="fas fa-plus"></i>
+                    <span>创建新帖子</span>
+                </button>
+            </div>
+            
+            <div class="forum-content">
+                <div class="forum-sidebar">
+                    <div class="forum-categories">
+                        <h3><i class="fas fa-list"></i> 分类</h3>
+                        <div class="forum-category active" data-category="all">
+                            <i class="fas fa-th-large"></i>
+                            <span>全部帖子</span>
+                        </div>
+                        <div class="forum-category" data-category="questions">
+                            <i class="fas fa-question-circle"></i>
+                            <span>问题求助</span>
+                        </div>
+                        <div class="forum-category" data-category="techniques">
+                            <i class="fas fa-cogs"></i>
+                            <span>技术讨论</span>
+                        </div>
+                        <div class="forum-category" data-category="gear">
+                            <i class="fas fa-camera"></i>
+                            <span>器材交流</span>
+                        </div>
+                        <div class="forum-category" data-category="inspiration">
+                            <i class="fas fa-lightbulb"></i>
+                            <span>灵感分享</span>
+                        </div>
+                        <div class="forum-category" data-category="feedback">
+                            <i class="fas fa-star"></i>
+                            <span>作品点评</span>
+                        </div>
+                        <div class="forum-category" data-category="announcements">
+                            <i class="fas fa-bullhorn"></i>
+                            <span>官方公告</span>
+                        </div>
+                    </div>
+                    
+                    <div class="forum-stats">
+                        <h3><i class="fas fa-chart-bar"></i> 论坛统计</h3>
+                        <div class="stat-item">
+                            <span>今日帖子</span>
+                            <span class="stat-value" id="today-posts">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>总帖子数</span>
+                            <span class="stat-value" id="total-posts">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>在线用户</span>
+                            <span class="stat-value" id="online-users">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>活跃用户</span>
+                            <span class="stat-value" id="active-users">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="forum-rules">
+                        <h3><i class="fas fa-gavel"></i> 社区规则</h3>
+                        <ul>
+                            <li><i class="fas fa-check"></i> 尊重他人观点</li>
+                            <li><i class="fas fa-check"></i> 禁止人身攻击</li>
+                            <li><i class="fas fa-check"></i> 保持内容相关</li>
+                            <li><i class="fas fa-check"></i> 遵守版权法律</li>
+                            <li><i class="fas fa-check"></i> 禁止广告推销</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="forum-posts-area">
+                    <div class="forum-posts-header">
+                        <h2><i class="fas fa-stream"></i> 最新帖子</h2>
+                        
+                        <div class="forum-posts-filters">
+                            <select id="forum-sort-select">
+                                <option value="newest">最新发布</option>
+                                <option value="popular">最受欢迎</option>
+                                <option value="commented">最多评论</option>
+                                <option value="views">最多浏览</option>
+                            </select>
+                            
+                            <input type="text" id="forum-search-input" placeholder="搜索帖子...">
+                        </div>
+                    </div>
+                    
+                    <div class="forum-posts-list" id="forum-posts-list">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                            <p>加载帖子...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="load-more-container">
+                        <button class="btn btn-outline load-more-btn" id="load-more-posts">
+                            <i class="fas fa-redo"></i>
+                            <span>加载更多</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 模态框容器 -->
+    <div id="modal-container">
+        <!-- 创建帖子模态框 -->
+        <div class="modal" id="create-post-modal">
+            <div class="modal-content modal-wide">
+                <div class="modal-header">
+                    <h2><i class="fas fa-plus"></i> 创建新帖子</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="create-post-form">
+                        <div class="form-group">
+                            <label for="post-title">
+                                <i class="fas fa-heading"></i> 标题 *
+                            </label>
+                            <input type="text" id="post-title" placeholder="输入帖子标题" required maxlength="100">
+                            <div class="char-count">
+                                <span id="post-title-length">0</span>/100
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="post-category">
+                                <i class="fas fa-tag"></i> 分类 *
+                            </label>
+                            <select id="post-category" required>
+                                <option value="">选择分类</option>
+                                <option value="questions">问题求助</option>
+                                <option value="techniques">技术讨论</option>
+                                <option value="gear">器材交流</option>
+                                <option value="inspiration">灵感分享</option>
+                                <option value="feedback">作品点评</option>
+                                <option value="announcements">官方公告</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="post-content">
+                                <i class="fas fa-align-left"></i> 内容 *
+                            </label>
+                            <div class="post-editor">
+                                <div class="editor-toolbar">
+                                    <button type="button" data-action="bold" title="粗体">
+                                        <i class="fas fa-bold"></i>
+                                    </button>
+                                    <button type="button" data-action="italic" title="斜体">
+                                        <i class="fas fa-italic"></i>
+                                    </button>
+                                    <button type="button" data-action="link" title="链接">
+                                        <i class="fas fa-link"></i>
+                                    </button>
+                                    <button type="button" data-action="image" title="图片">
+                                        <i class="fas fa-image"></i>
+                                    </button>
+                                    <button type="button" data-action="code" title="代码">
+                                        <i class="fas fa-code"></i>
+                                    </button>
+                                    <button type="button" data-action="quote" title="引用">
+                                        <i class="fas fa-quote-right"></i>
+                                    </button>
+                                </div>
+                                <div class="editor-content" id="post-editor-content" contenteditable="true" placeholder="输入帖子内容..."></div>
+                                <input type="hidden" id="post-content" name="content">
+                            </div>
+                            <div class="char-count">
+                                <span id="post-content-length">0</span>/5000
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="post-tags">
+                                <i class="fas fa-tags"></i> 标签
+                            </label>
+                            <input type="text" id="post-tags-input" placeholder="输入标签，用逗号分隔">
+                            <div class="post-tags-input" id="post-tags-container">
+                                <!-- 标签将通过JS动态生成 -->
+                            </div>
+                            <p class="form-help">最多添加5个标签，每个标签不超过20个字符</p>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="checkbox">
+                                <input type="checkbox" id="post-notify" checked>
+                                <i class="fas fa-bell"></i>
+                                <span>有新回复时通知我</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancel-post-btn">取消</button>
+                            <button type="submit" class="btn btn-primary" id="submit-post-btn">
+                                <i class="fas fa-paper-plane"></i>
+                                <span>发布帖子</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 帖子详情模态框 -->
+        <div class="modal" id="post-detail-modal">
+            <div class="modal-content modal-wide">
+                <div class="modal-header">
+                    <h2 id="post-detail-title">帖子详情</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="post-detail-container" id="post-detail-content">
+                        <!-- 帖子详情将通过JS动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div id="notification-container"></div>
+
+    <!-- 加载指示器 -->
+    <div id="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner-large"></div>
+            <p>加载中...</p>
+        </div>
+    </div>
+
+    <!-- 脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js" type="module"></script>
+    <script src="auth.js" type="module"></script>
+    <script src="utils.js" type="module"></script>
+    <script src="forum.js" type="module"></script>
+    
+    <script>
+        // 字符计数
+        document.addEventListener('DOMContentLoaded', () => {
+            const titleInput = document.getElementById('post-title');
+            const contentEditor = document.getElementById('post-editor-content');
+            const titleLength = document.getElementById('post-title-length');
+            const contentLength = document.getElementById('post-content-length');
+            
+            if (titleInput && titleLength) {
+                titleInput.addEventListener('input', () => {
+                    titleLength.textContent = titleInput.value.length;
+                });
+            }
+            
+            if (contentEditor && contentLength) {
+                contentEditor.addEventListener('input', () => {
+                    contentLength.textContent = contentEditor.textContent.length;
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,232 +1,876 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="light">
+<html lang="zh-CN" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>照片分享平台</title>
-  <!-- 外部依赖 -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
-  <!-- 自定义样式（新增） -->
-  <link rel="stylesheet" href="./styles.css">
-  <!-- Tailwind配置 -->
-  <script>
-    tailwind.config = { darkMode: 'class' };
-  </script>
-  <style type="text/tailwindcss">
-    @layer utilities {
-      .line-clamp-2 {
-        overflow: hidden;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>光影分享 - 专业的照片分享平台</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📸</text></svg>">
+    
+    <!-- iOS PWA支持 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="光影分享">
+    <meta name="theme-color" content="#6366f1">
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen flex flex-col">
-  <!-- 导航栏 -->
-  <nav id="navbar" class="sticky top-0 z-40 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-    <div class="max-w-7xl mx-auto flex justify-between items-center">
-      <a href="#" class="text-xl font-bold flex items-center gap-2">
-        <<i class="fas fa-camera"></</i>
-        <span>PhotoShare</span>
-      </a>
-      <!-- 电脑端导航 -->
-      <div class="hidden md:flex items-center gap-6">
-        <a href="#explore" class="nav-link hover:text-blue-500 dark:hover:text-blue-400">发现</a>
-        <a href="#hot" class="nav-link hover:text-blue-500 dark:hover:text-blue-400">热门</a>
-        <a href="#discussion" class="nav-link hover:text-blue-500 dark:hover:text-blue-400">讨论</a>
-        <a href="#my" class="nav-link hover:text-blue-500 dark:hover:text-blue-400">我的</a>
-      </div>
-      <!-- 电脑端功能 -->
-      <div class="hidden md:flex items-center gap-4">
-        <button id="search-btn" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-search"></</i>
-        </button>
-        <input type="text" id="search-input" placeholder="搜索照片/关键词" class="py-1 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none w-40 focus:w-60 transition-all">
-        <button id="light-mode" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-sun"></</i>
-        </button>
-        <button id="dark-mode" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-moon"></</i>
-        </button>
-        <button id="upload-btn" class="hidden py-1 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-          <<i class="fas fa-upload mr-1"></</i>上传
-        </button>
-        <button id="login-btn" class="py-1 px-4 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">
-          登录/注册
-        </button>
-        <button id="logout-btn" class="hidden py-1 px-4 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">
-          退出
-        </button>
-      </div>
-      <!-- 手机端菜单按钮 -->
-      <button id="mobile-menu-btn" class="md:hidden p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-        <<i class="fas fa-bars"></</i>
-      </button>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-camera"></i>
+                    <span>光影分享</span>
+                </a>
+                <div class="theme-toggle">
+                    <button id="theme-toggle" class="theme-btn">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="nav-search">
+                <div class="search-container">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="global-search" placeholder="搜索照片、用户或关键词...">
+                    <div class="search-results" id="search-results"></div>
+                </div>
+            </div>
+            
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link active">
+                    <i class="fas fa-home"></i>
+                    <span class="nav-text">首页</span>
+                </a>
+                <a href="#explore" class="nav-link">
+                    <i class="fas fa-compass"></i>
+                    <span class="nav-text">探索</span>
+                </a>
+                <a href="forum.html" class="nav-link">
+                    <i class="fas fa-comments"></i>
+                    <span class="nav-text">社区</span>
+                </a>
+                <a href="upload.html" class="nav-link" id="upload-link">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span class="nav-text">上传</span>
+                </a>
+                <div class="nav-user" id="nav-user">
+                    <!-- 用户登录后会显示在这里 -->
+                </div>
+            </div>
+            
+            <button class="mobile-menu-btn" id="mobile-menu-btn">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+        
+        <!-- 移动端菜单 -->
+        <div class="mobile-menu" id="mobile-menu">
+            <a href="index.html" class="mobile-nav-link active">
+                <i class="fas fa-home"></i>
+                <span>首页</span>
+            </a>
+            <a href="#explore" class="mobile-nav-link">
+                <i class="fas fa-compass"></i>
+                <span>探索</span>
+            </a>
+            <a href="forum.html" class="mobile-nav-link">
+                <i class="fas fa-comments"></i>
+                <span>社区</span>
+            </a>
+            <a href="upload.html" class="mobile-nav-link" id="mobile-upload-link">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <span>上传</span>
+            </a>
+            <div class="mobile-auth-buttons" id="mobile-auth-buttons">
+                <!-- 移动端登录/注册按钮 -->
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要内容区域 -->
+    <main class="main-content">
+        <!-- 欢迎横幅 -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">分享您的视觉故事</h1>
+                <p class="hero-subtitle">加入全球创意社区，发现和分享令人惊叹的照片</p>
+                <div class="hero-buttons" id="hero-buttons">
+                    <button class="btn btn-primary" id="hero-signup">免费注册</button>
+                    <button class="btn btn-secondary" id="hero-explore">探索照片</button>
+                </div>
+            </div>
+            <div class="hero-background">
+                <div class="floating-image" style="--delay: 0s;">
+                    <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb" alt="风景">
+                </div>
+                <div class="floating-image" style="--delay: 1s;">
+                    <img src="https://images.unsplash.com/photo-1519681393784-d120267933ba" alt="星空">
+                </div>
+                <div class="floating-image" style="--delay: 2s;">
+                    <img src="https://images.unsplash.com/photo-1518837695005-2083093ee35b" alt="城市">
+                </div>
+            </div>
+        </section>
+        
+        <!-- 热门照片区域 -->
+        <section class="section" id="trending-section">
+            <div class="section-header">
+                <h2 class="section-title">热门照片</h2>
+                <p class="section-subtitle">发现社区中最受欢迎的作品</p>
+            </div>
+            <div class="photos-grid" id="trending-photos">
+                <!-- 热门照片将通过JS加载 -->
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载热门照片...</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 最新照片区域 -->
+        <section class="section" id="latest-section">
+            <div class="section-header">
+                <h2 class="section-title">最新照片</h2>
+                <p class="section-subtitle">探索社区中的最新作品</p>
+            </div>
+            <div class="photos-grid" id="latest-photos">
+                <!-- 最新照片将通过JS加载 -->
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载最新照片...</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 探索类别 -->
+        <section class="section" id="categories-section">
+            <div class="section-header">
+                <h2 class="section-title">浏览类别</h2>
+                <p class="section-subtitle">根据兴趣发现照片</p>
+            </div>
+            <div class="categories-grid">
+                <div class="category-card" data-category="风景">
+                    <div class="category-icon">
+                        <i class="fas fa-mountain"></i>
+                    </div>
+                    <h3>风景</h3>
+                    <p>自然风光与户外景色</p>
+                </div>
+                <div class="category-card" data-category="人像">
+                    <div class="category-icon">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <h3>人像</h3>
+                    <p>人物摄影与肖像</p>
+                </div>
+                <div class="category-card" data-category="城市">
+                    <div class="category-icon">
+                        <i class="fas fa-city"></i>
+                    </div>
+                    <h3>城市</h3>
+                    <p>都市景观与建筑</p>
+                </div>
+                <div class="category-card" data-category="动物">
+                    <div class="category-icon">
+                        <i class="fas fa-paw"></i>
+                    </div>
+                    <h3>动物</h3>
+                    <p>野生动物与宠物</p>
+                </div>
+                <div class="category-card" data-category="旅行">
+                    <div class="category-icon">
+                        <i class="fas fa-plane"></i>
+                    </div>
+                    <h3>旅行</h3>
+                    <p>旅行记录与冒险</p>
+                </div>
+                <div class="category-card" data-category="街头">
+                    <div class="category-icon">
+                        <i class="fas fa-road"></i>
+                    </div>
+                    <h3>街头</h3>
+                    <p>街头摄影与纪实</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 特色用户 -->
+        <section class="section" id="featured-users-section">
+            <div class="section-header">
+                <h2 class="section-title">特色摄影师</h2>
+                <p class="section-subtitle">关注优秀创作者</p>
+            </div>
+            <div class="users-grid" id="featured-users">
+                <!-- 特色用户将通过JS加载 -->
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载特色用户...</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 论坛预览 -->
+        <section class="section" id="forum-preview-section">
+            <div class="section-header">
+                <h2 class="section-title">社区讨论</h2>
+                <p class="section-subtitle">参与摄影讨论，分享经验</p>
+            </div>
+            <div class="forum-preview">
+                <div class="forum-preview-content">
+                    <h3><i class="fas fa-comments"></i> 摄影交流区</h3>
+                    <p>与全球摄影师交流技巧、分享经验、讨论设备</p>
+                    <a href="forum.html" class="btn btn-outline">
+                        <i class="fas fa-arrow-right"></i>
+                        <span>进入社区</span>
+                    </a>
+                </div>
+                <div class="forum-preview-topics">
+                    <div class="topic-item">
+                        <i class="fas fa-camera"></i>
+                        <div>
+                            <h4>器材讨论</h4>
+                            <p>相机、镜头、配件选择</p>
+                        </div>
+                    </div>
+                    <div class="topic-item">
+                        <i class="fas fa-lightbulb"></i>
+                        <div>
+                            <h4>技巧分享</h4>
+                            <p>摄影技巧与后期处理</p>
+                        </div>
+                    </div>
+                    <div class="topic-item">
+                        <i class="fas fa-question-circle"></i>
+                        <div>
+                            <h4>问答求助</h4>
+                            <p>摄影问题解答</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>光影分享</h3>
+                <p>一个为摄影师和视觉创作者打造的社区平台</p>
+                <div class="social-links">
+                    <a href="#" title="Facebook"><i class="fab fa-facebook"></i></a>
+                    <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a>
+                    <a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+                    <a href="#" title="GitHub"><i class="fab fa-github"></i></a>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>快速链接</h4>
+                <ul>
+                    <li><a href="index.html">首页</a></li>
+                    <li><a href="#explore">探索</a></li>
+                    <li><a href="forum.html">社区</a></li>
+                    <li><a href="upload.html">上传</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>支持</h4>
+                <ul>
+                    <li><a href="help.html">帮助中心</a></li>
+                    <li><a href="faq.html">常见问题</a></li>
+                    <li><a href="contact.html">联系我们</a></li>
+                    <li><a href="privacy.html">隐私政策</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>技术</h4>
+                <ul>
+                    <li><a href="api.html">API</a></li>
+                    <li><a href="status.html">系统状态</a></li>
+                    <li><a href="changelog.html">更新日志</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2023 光影分享. 保留所有权利.</p>
+            <p>使用 <a href="https://supabase.com" target="_blank">Supabase</a> 和 <a href="https://cloudinary.com" target="_blank">Cloudinary</a> 构建</p>
+        </div>
+    </footer>
+
+    <!-- 模态框容器 -->
+    <div id="modal-container">
+        <!-- 登录模态框 -->
+        <div class="modal" id="login-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>登录到光影分享</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="login-form">
+                        <div class="form-group">
+                            <label for="login-email">邮箱</label>
+                            <input type="email" id="login-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="login-password">密码</label>
+                            <input type="password" id="login-password" required>
+                            <div class="password-toggle">
+                                <i class="fas fa-eye" id="toggle-login-password"></i>
+                            </div>
+                        </div>
+                        <div class="form-options">
+                            <label class="checkbox">
+                                <input type="checkbox" id="remember-me">
+                                <span>记住我</span>
+                            </label>
+                            <a href="#forgot-password" id="forgot-password-link">忘记密码?</a>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">登录</button>
+                    </form>
+                    
+                    <div class="divider">
+                        <span>或</span>
+                    </div>
+                    
+                    <div class="social-login">
+                        <button class="btn-social google" id="google-login">
+                            <i class="fab fa-google"></i>
+                            <span>使用Google登录</span>
+                        </button>
+                        <button class="btn-social facebook" id="facebook-login">
+                            <i class="fab fa-facebook"></i>
+                            <span>使用Facebook登录</span>
+                        </button>
+                        <button class="btn-social github" id="github-login">
+                            <i class="fab fa-github"></i>
+                            <span>使用GitHub登录</span>
+                        </button>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <p>还没有账户? <a href="#signup" id="signup-link">立即注册</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 注册模态框 -->
+        <div class="modal" id="signup-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>创建新账户</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="signup-form">
+                        <div class="form-group">
+                            <label for="signup-username">用户名</label>
+                            <input type="text" id="signup-username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="signup-email">邮箱</label>
+                            <input type="email" id="signup-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="signup-password">密码</label>
+                            <input type="password" id="signup-password" required minlength="6">
+                            <div class="password-toggle">
+                                <i class="fas fa-eye" id="toggle-signup-password"></i>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="signup-confirm-password">确认密码</label>
+                            <input type="password" id="signup-confirm-password" required minlength="6">
+                            <div class="password-toggle">
+                                <i class="fas fa-eye" id="toggle-signup-confirm-password"></i>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox">
+                                <input type="checkbox" id="terms-agreement" required>
+                                <span>我同意 <a href="terms.html">服务条款</a> 和 <a href="privacy.html">隐私政策</a></span>
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">创建账户</button>
+                    </form>
+                    
+                    <div class="divider">
+                        <span>或</span>
+                    </div>
+                    
+                    <div class="social-login">
+                        <button class="btn-social google" id="google-signup">
+                            <i class="fab fa-google"></i>
+                            <span>使用Google注册</span>
+                        </button>
+                        <button class="btn-social facebook" id="facebook-signup">
+                            <i class="fab fa-facebook"></i>
+                            <span>使用Facebook注册</span>
+                        </button>
+                        <button class="btn-social github" id="github-signup">
+                            <i class="fab fa-github"></i>
+                            <span>使用GitHub注册</span>
+                        </button>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <p>已有账户? <a href="#login" id="login-link">立即登录</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 忘记密码模态框 -->
+        <div class="modal" id="forgot-password-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>重置密码</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="forgot-password-form">
+                        <div class="form-group">
+                            <label for="reset-email">邮箱地址</label>
+                            <input type="email" id="reset-email" required>
+                            <p class="form-help">我们将向该邮箱发送密码重置链接</p>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">发送重置链接</button>
+                    </form>
+                    <div class="modal-footer">
+                        <p>记起密码了? <a href="#login" id="back-to-login">返回登录</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 图片详情模态框 -->
+        <div class="modal" id="photo-detail-modal">
+            <div class="modal-content modal-wide">
+                <div class="modal-header">
+                    <h2 id="photo-detail-title">照片详情</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="photo-detail-container" id="photo-detail-content">
+                        <!-- 照片详情将通过JS加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 分享模态框 -->
+        <div class="modal" id="share-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-share-alt"></i> 分享</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="share-content" id="share-modal-content">
+                        <!-- 分享内容将通过JS动态生成 -->
+                    </div>
+                    
+                    <div class="share-actions">
+                        <button class="share-btn facebook" data-platform="facebook">
+                            <i class="fab fa-facebook-f"></i>
+                            <span>Facebook</span>
+                        </button>
+                        <button class="share-btn twitter" data-platform="twitter">
+                            <i class="fab fa-twitter"></i>
+                            <span>Twitter</span>
+                        </button>
+                        <button class="share-btn whatsapp" data-platform="whatsapp">
+                            <i class="fab fa-whatsapp"></i>
+                            <span>WhatsApp</span>
+                        </button>
+                        <button class="share-btn telegram" data-platform="telegram">
+                            <i class="fab fa-telegram"></i>
+                            <span>Telegram</span>
+                        </button>
+                    </div>
+                    
+                    <div class="share-link">
+                        <input type="text" id="share-modal-url" readonly>
+                        <button class="btn btn-primary" id="copy-modal-url-btn">
+                            <i class="fas fa-copy"></i>
+                            <span>复制链接</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <!-- 手机端菜单 -->
-    <div id="mobile-menu" class="md:hidden hidden mt-3 pb-2 flex flex-col gap-2">
-      <div class="flex items-center gap-2 px-2">
-        <input type="text" id="mobile-search-input" placeholder="搜索" class="py-1 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none flex-1">
-        <button id="mobile-search-btn" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-search"></</i>
-        </button>
-      </div>
-      <a href="#explore" class="nav-link px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">发现</a>
-      <a href="#hot" class="nav-link px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">热门</a>
-      <a href="#discussion" class="nav-link px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">讨论</a>
-      <a href="#my" class="nav-link px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">我的</a>
-      <div class="flex gap-2 px-2">
-        <button id="mobile-light-mode" class="flex-1 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600">
-          <<i class="fas fa-sun mr-1"></</i>亮色
-        </button>
-        <button id="mobile-dark-mode" class="flex-1 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600">
-          <<i class="fas fa-moon mr-1"></</i>暗色
-        </button>
-      </div>
-      <button id="mobile-upload-btn" class="hidden mx-2 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-        <<i class="fas fa-upload mr-1"></</i>上传照片
-      </button>
-      <button id="mobile-logout-btn" class="hidden mx-2 py-1 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">
-        <<i class="fas fa-sign-out-alt mr-1"></</i>退出登录
-      </button>
+
+    <!-- 通知容器 -->
+    <div id="notification-container"></div>
+
+    <!-- 加载指示器 -->
+    <div id="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner-large"></div>
+            <p>加载中...</p>
+        </div>
     </div>
-  </nav>
 
-  <!-- 主内容区 -->
-  <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-    <!-- 首页 -->
-    <section id="home" class="text-center py-12">
-      <h1 class="text-4xl font-bold mb-4">分享你的美好瞬间</h1>
-      <p class="text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
-        在这里，你可以上传、分享你的照片，发现更多精彩内容，和志同道合的朋友一起交流
-      </p>
-      <button id="home-explore-btn" class="py-2 px-6 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-lg">
-        立即探索 <<i class="fas fa-arrow-right ml-2"></</i>
-      </button>
-    </section>
-
-    <!-- 发现页 -->
-    <section id="explore" class="hidden">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold">发现精彩</h2>
-        <select id="explore-sort" class="py-1 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none">
-          <option value="created_at">最新发布</option>
-          <option value="likes">最热照片</option>
-        </select>
-      </div>
-      <div id="explore-photos" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <!-- 照片动态渲染 -->
-      </div>
-    </section>
-
-    <!-- 热门页 -->
-    <section id="hot" class="hidden">
-      <h2 class="text-2xl font-bold mb-4">热门照片</h2>
-      <div id="hot-photos" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <!-- 照片动态渲染 -->
-      </div>
-    </section>
-
-    <!-- 讨论区 -->
-    <section id="discussion" class="hidden">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold">讨论区</h2>
-        <button id="create-discussion-btn" class="py-1 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-          <<i class="fas fa-plus mr-1"></</i>发布讨论
-        </button>
-      </div>
-      <div id="discussions-list" class="flex flex-col gap-3">
-        <!-- 讨论动态渲染 -->
-      </div>
-    </section>
-
-    <!-- 我的页面 -->
-    <section id="my" class="hidden">
-      <div class="flex flex-col md:flex-row items-center md:items-start gap-6 mb-6">
-        <img id="my-avatar" src="https://picsum.photos/200/200" alt="我的头像" class="w-20 h-20 rounded-full border-2 border-gray-200 dark:border-gray-700">
-        <div>
-          <h2 id="my-username" class="text-2xl font-bold mb-1">未登录</h2>
-          <p id="my-bio" class="text-gray-600 dark:text-gray-400">点击登录/注册，开启你的分享之旅</p>
-          <button id="edit-profile-btn" class="mt-2 py-1 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm">
-            <<i class="fas fa-edit mr-1"></</i>编辑资料
-          </button>
-        </div>
-      </div>
-
-      <div id="my-photos-container" class="hidden">
-        <div class="flex gap-2 mb-4">
-          <button id="my-photos-all" class="py-1 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600">全部照片</button>
-          <button id="my-photos-public" class="py-1 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">公开照片</button>
-          <button id="my-photos-private" class="py-1 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">私有照片</button>
-        </div>
-        <div id="my-photos" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <!-- 我的照片动态渲染 -->
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <!-- 页脚 -->
-  <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-6 text-center text-gray-600 dark:text-gray-400 text-sm">
-    <p>© 2025 PhotoShare 照片分享平台 | 所有权利保留</p>
-  </footer>
-
-  <!-- 模态框：登录 -->
-  <div id="login-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
-      <div class="flex justify-between items-center mb-4">
-        <h3 class="text-xl font-bold">登录账号</h3>
-        <button class="modal-close p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-times"></</i>
-        </button>
-      </div>
-      <form id="login-form" class="flex flex-col gap-4">
-        <div>
-          <label for="login-email" class="block text-sm mb-1">邮箱</label>
-          <input type="email" id="login-email" required class="w-full py-2 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none">
-        </div>
-        <div>
-          <label for="login-password" class="block text-sm mb-1">密码</label>
-          <input type="password" id="login-password" required class="w-full py-2 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none">
-        </div>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="login-remember">
-          <label for="login-remember" class="text-sm">记住我30天</label>
-        </div>
-        <button type="submit" class="py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-          立即登录
-        </button>
-        <div class="flex justify-between text-sm text-blue-500 dark:text-blue-400">
-          <a href="#" id="to-register-link" class="hover:underline">还没有账号？立即注册</a>
-          <a href="#" id="forgot-password-link" class="hover:underline">忘记密码？</a>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 模态框：注册 -->
-  <div id="register-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
-      <div class="flex justify-between items-center mb-4">
-        <h3 class="text-xl font-bold">注册账号</h3>
-        <button class="modal-close p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <<i class="fas fa-times"></</i>
-        </button>
-      </div>
-      <form id="register-form" class="flex flex-col gap-4">
-        <div>
-          <label for="register-email" class="block text-sm mb-1">邮箱</label>
-          <input type="email" id="register-email" required class="w-full py-2 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none">
-        </div>
-        <div>
-          <label for="register-password" class="block text-sm mb-1">密码（至少6位）</label>
-          <input type="password" id="register-password" required minlength="6" class="w-full py-2 px-3 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 outline-none">
-        </div>
-        <div>
-          <label for="register-confirm-password" class="block text-sm mb-1">确认密码</label>
-          <input type="password" id="register-confirm-password" required minlength="6" class="w-full py-2 px-3 rounded-lg bg-gray-100 dark:bg-gray
+    <!-- 脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://upload-widget.cloudinary.com/global/all.js" type="text/javascript"></script>
+    
+    <!-- 注册Service Worker -->
+    <script src="register-sw.js"></script>
+    
+    <!-- 应用脚本 -->
+    <script src="config.js" type="module"></script>
+    <script src="utils.js" type="module"></script>
+    <script src="auth.js" type="module"></script>
+    <script src="app.js" type="module"></script>
+    
+    <style>
+        /* 论坛预览样式 */
+        #forum-preview-section {
+            background: var(--gradient-dark);
+            border-radius: var(--radius-xl);
+            margin: 40px 20px;
+        }
+        
+        .forum-preview {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            background: var(--bg-card);
+            border-radius: var(--radius-lg);
+            padding: 40px;
+            border: 1px solid var(--border-color);
+        }
+        
+        @media (max-width: 768px) {
+            .forum-preview {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .forum-preview-content h3 {
+            font-size: 2rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .forum-preview-content p {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        
+        .forum-preview-topics {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .topic-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            transition: all var(--transition-fast);
+        }
+        
+        .topic-item:hover {
+            border-color: var(--accent-primary);
+            transform: translateX(5px);
+        }
+        
+        .topic-item i {
+            font-size: 2rem;
+            color: var(--accent-primary);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: var(--radius-md);
+        }
+        
+        .topic-item h4 {
+            font-size: 1.25rem;
+            margin-bottom: 4px;
+        }
+        
+        .topic-item p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin: 0;
+        }
+        
+        /* 分享模态框样式 */
+        .share-content {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        
+        .share-content h3 {
+            margin-bottom: 8px;
+        }
+        
+        .share-content p {
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+        
+        .share-actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .share-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px;
+            border-radius: var(--radius-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        
+        .share-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .share-btn.facebook {
+            color: #1877f2;
+            border-color: rgba(24, 119, 242, 0.3);
+        }
+        
+        .share-btn.twitter {
+            color: #1da1f2;
+            border-color: rgba(29, 161, 242, 0.3);
+        }
+        
+        .share-btn.whatsapp {
+            color: #25d366;
+            border-color: rgba(37, 211, 102, 0.3);
+        }
+        
+        .share-btn.telegram {
+            color: #0088cc;
+            border-color: rgba(0, 136, 204, 0.3);
+        }
+        
+        .share-link {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .share-link input {
+            flex: 1;
+        }
+        
+        /* 探索锚点样式 */
+        #explore {
+            position: relative;
+            top: -80px;
+        }
+        
+        /* PWA安装提示 */
+        .pwa-install-prompt {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            box-shadow: var(--shadow-xl);
+            z-index: 9999;
+            max-width: 350px;
+            animation: slideUp 0.3s ease;
+            display: none;
+        }
+        
+        .pwa-install-prompt.active {
+            display: block;
+        }
+        
+        .pwa-prompt-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .pwa-prompt-content i {
+            font-size: 1.5rem;
+            color: var(--accent-primary);
+        }
+        
+        .pwa-prompt-content h4 {
+            margin: 0 0 4px 0;
+            font-size: 1rem;
+        }
+        
+        .pwa-prompt-content p {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        .pwa-prompt-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .pwa-prompt-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+    
+    <script>
+        // PWA安装提示
+        document.addEventListener('DOMContentLoaded', () => {
+            let deferredPrompt;
+            const installPrompt = document.createElement('div');
+            installPrompt.className = 'pwa-install-prompt';
+            installPrompt.innerHTML = `
+                <div class="pwa-prompt-close" id="pwa-close-btn">&times;</div>
+                <div class="pwa-prompt-content">
+                    <i class="fas fa-download"></i>
+                    <div>
+                        <h4>安装光影分享</h4>
+                        <p>添加到主屏幕以获得更好的体验</p>
+                    </div>
+                </div>
+                <div class="pwa-prompt-actions">
+                    <button class="btn btn-primary btn-small" id="pwa-install-btn">安装</button>
+                    <button class="btn btn-outline btn-small" id="pwa-later-btn">稍后</button>
+                </div>
+            `;
+            document.body.appendChild(installPrompt);
+            
+            // 监听beforeinstallprompt事件
+            window.addEventListener('beforeinstallprompt', (e) => {
+                // 阻止默认的安装提示
+                e.preventDefault();
+                // 保存事件以便稍后使用
+                deferredPrompt = e;
+                
+                // 显示自定义安装提示
+                setTimeout(() => {
+                    const hasSeenPrompt = localStorage.getItem('pwaPromptSeen');
+                    if (!hasSeenPrompt) {
+                        installPrompt.classList.add('active');
+                    }
+                }, 5000);
+            });
+            
+            // 安装按钮点击事件
+            document.getElementById('pwa-install-btn')?.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    // 显示安装提示
+                    deferredPrompt.prompt();
+                    // 等待用户选择
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`用户选择: ${outcome}`);
+                    // 清除保存的事件
+                    deferredPrompt = null;
+                    // 隐藏提示
+                    installPrompt.classList.remove('active');
+                    localStorage.setItem('pwaPromptSeen', 'true');
+                }
+            });
+            
+            // 稍后按钮
+            document.getElementById('pwa-later-btn')?.addEventListener('click', () => {
+                installPrompt.classList.remove('active');
+                // 1小时后再次显示
+                setTimeout(() => {
+                    localStorage.removeItem('pwaPromptSeen');
+                }, 3600000);
+            });
+            
+            // 关闭按钮
+            document.getElementById('pwa-close-btn')?.addEventListener('click', () => {
+                installPrompt.classList.remove('active');
+                localStorage.setItem('pwaPromptSeen', 'true');
+            });
+            
+            // 检查是否已安装
+            window.addEventListener('appinstalled', () => {
+                console.log('PWA已安装');
+                installPrompt.classList.remove('active');
+                localStorage.setItem('pwaInstalled', 'true');
+            });
+            
+            // 如果是独立模式（已安装），添加特殊样式
+            if (window.matchMedia('(display-mode: standalone)').matches || 
+                window.navigator.standalone === true) {
+                document.documentElement.classList.add('pwa-installed');
+                // 可以在这里添加PWA特有的样式或行为
+            }
+        });
+        
+        // 平滑滚动到探索区域
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('#hero-explore') || 
+                e.target.closest('[href="#explore"]')) {
+                e.preventDefault();
+                const exploreSection = document.querySelector('#explore + .section') || 
+                                      document.querySelector('#trending-section');
+                if (exploreSection) {
+                    exploreSection.scrollIntoView({ 
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        });
+        
+        // 添加论坛页面链接
+        if (!document.querySelector('a[href="forum.html"]')) {
+            // 确保论坛链接存在
+            console.log('论坛链接已添加');
+        }
+    </script>
+</body>
+</html>
