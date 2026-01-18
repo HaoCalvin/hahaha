@@ -1,173 +1,139 @@
-// 认证模块
-import { supabase, ADMIN_EMAIL } from './config.js';
-import { showNotification, showLoading, hideLoading, validateEmail, validatePassword } from './utils.js';
+// 用户认证相关函数
 
 class AuthManager {
     constructor() {
+        this.supabase = null;
         this.currentUser = null;
-        this.isInitialized = false;
+        this.isAdmin = false;
         this.init();
     }
 
     async init() {
+        // 初始化Supabase客户端
+        this.supabase = supabase.createClient(
+            window.SUPABASE_CONFIG.supabaseUrl,
+            window.SUPABASE_CONFIG.supabaseKey
+        );
+
+        // 检查当前会话
+        await this.checkSession();
+    }
+
+    async checkSession() {
         try {
-            // 检查现有会话
-            const { data: { session }, error } = await supabase.auth.getSession();
+            const { data: { session } } = await this.supabase.auth.getSession();
             
-            if (session && session.user) {
+            if (session) {
                 this.currentUser = session.user;
-                await this.ensureUserProfile(session.user);
-                this.isInitialized = true;
+                await this.loadUserProfile();
+                this.updateUIForLoggedInUser();
+            } else {
+                this.updateUIForLoggedOutUser();
             }
-            
-            // 监听认证状态变化
-            supabase.auth.onAuthStateChange(async (event, session) => {
-                if (event === 'SIGNED_IN' && session) {
-                    this.currentUser = session.user;
-                    await this.ensureUserProfile(session.user);
-                    this.dispatchAuthChange();
-                } else if (event === 'SIGNED_OUT') {
-                    this.currentUser = null;
-                    this.dispatchAuthChange();
-                }
-            });
-            
         } catch (error) {
-            console.error('认证初始化失败:', error);
+            console.error('检查会话错误:', error);
         }
     }
 
-    async ensureUserProfile(user) {
+    async loadUserProfile() {
         try {
-            // 检查用户资料是否存在
-            const { data: profile, error } = await supabase
+            const { data: profile, error } = await this.supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', user.id)
+                .eq('id', this.currentUser.id)
                 .single();
-            
-            if (error && error.code === 'PGRST116') {
-                // 用户资料不存在，创建新资料
-                const username = await this.generateUsername(user.email);
-                
-                const { data: newProfile, error: createError } = await supabase
-                    .from('profiles')
-                    .insert({
-                        id: user.id,
-                        username: username,
-                        full_name: user.user_metadata?.full_name || '',
-                        avatar_url: user.user_metadata?.avatar_url || '',
-                        is_admin: user.email === ADMIN_EMAIL, // 设置管理员
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .select()
-                    .single();
-                
-                if (createError) throw createError;
-                return newProfile;
+
+            if (error) {
+                if (error.code === 'PGRST116') {
+                    // 用户第一次登录，创建profile
+                    await this.createUserProfile();
+                } else {
+                    throw error;
+                }
+            } else {
+                this.currentUser.profile = profile;
+                this.isAdmin = profile.is_admin || 
+                    this.currentUser.email === window.SUPABASE_CONFIG.adminEmail;
             }
-            
-            if (error) throw error;
-            
-            return profile;
-            
         } catch (error) {
-            console.error('确保用户资料失败:', error);
-            return null;
+            console.error('加载用户资料错误:', error);
         }
     }
 
-    async generateUsername(email) {
-        // 从邮箱生成用户名
-        const baseUsername = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        
-        // 检查用户名是否已存在
-        let username = baseUsername;
-        let counter = 1;
-        
-        while (true) {
-            const { data, error } = await supabase
+    async createUserProfile() {
+        try {
+            const username = this.currentUser.email.split('@')[0] + 
+                Math.floor(Math.random() * 1000);
+            
+            const profileData = {
+                id: this.currentUser.id,
+                username: username,
+                full_name: this.currentUser.email.split('@')[0],
+                avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=6c63ff&color=fff`,
+                bio: '光影分享社区的新成员',
+                is_admin: this.currentUser.email === window.SUPABASE_CONFIG.adminEmail
+            };
+
+            const { data, error } = await this.supabase
                 .from('profiles')
-                .select('username')
-                .eq('username', username)
-                .single();
-            
-            if (error && error.code === 'PGRST116') {
-                // 用户名可用
-                return username;
-            }
-            
-            // 用户名已存在，添加数字后缀
-            username = `${baseUsername}${counter}`;
-            counter++;
-            
-            if (counter > 100) {
-                // 生成随机用户名
-                return `user_${Math.random().toString(36).substring(2, 10)}`;
-            }
+                .insert([profileData]);
+
+            if (error) throw error;
+
+            this.currentUser.profile = profileData;
+            this.isAdmin = profileData.is_admin;
+        } catch (error) {
+            console.error('创建用户资料错误:', error);
         }
     }
 
-    async signUp(email, password, username, fullName = '') {
+    async signUp(email, password, username) {
         try {
             showLoading();
             
-            // 验证输入
-            if (!validateEmail(email)) {
-                throw new Error('请输入有效的邮箱地址');
-            }
-            
-            if (!validatePassword(password)) {
-                throw new Error('密码至少需要6个字符');
-            }
-            
-            if (!username || username.length < 3) {
-                throw new Error('用户名至少需要3个字符');
-            }
-            
-            if (username.length > 20) {
-                throw new Error('用户名不能超过20个字符');
-            }
-            
-            // 检查用户名是否已存在
-            const { data: existingUser } = await supabase
-                .from('profiles')
-                .select('username')
-                .eq('username', username)
-                .single();
-            
-            if (existingUser) {
-                throw new Error('用户名已存在，请选择其他用户名');
-            }
-            
-            // 注册用户
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-                email,
-                password,
+            // 注册新用户
+            const { data: authData, error: authError } = await this.supabase.auth.signUp({
+                email: email,
+                password: password,
                 options: {
                     data: {
-                        username,
-                        full_name: fullName
+                        username: username
                     }
                 }
             });
-            
+
             if (authError) throw authError;
-            
-            // 等待用户资料创建
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            hideLoading();
-            showNotification('注册成功！请检查您的邮箱以验证账户', 'success');
-            
-            return authData.user;
-            
+
+            // 创建用户profile
+            if (authData.user) {
+                const profileData = {
+                    id: authData.user.id,
+                    username: username,
+                    full_name: username,
+                    avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=6c63ff&color=fff`,
+                    bio: '光影分享社区的新成员',
+                    is_admin: email === window.SUPABASE_CONFIG.adminEmail
+                };
+
+                const { error: profileError } = await this.supabase
+                    .from('profiles')
+                    .insert([profileData]);
+
+                if (profileError) throw profileError;
+
+                this.currentUser = authData.user;
+                this.currentUser.profile = profileData;
+                this.isAdmin = profileData.is_admin;
+
+                hideLoading();
+                showMessage('注册成功！请检查邮箱验证您的账户。', 'success');
+                this.updateUIForLoggedInUser();
+                return true;
+            }
         } catch (error) {
             hideLoading();
-            console.error('注册失败:', error);
-            showNotification(error.message || '注册失败，请重试', 'error');
-            throw error;
+            showMessage(error.message, 'error');
+            return false;
         }
     }
 
@@ -175,389 +141,258 @@ class AuthManager {
         try {
             showLoading();
             
-            if (!validateEmail(email)) {
-                throw new Error('请输入有效的邮箱地址');
-            }
-            
-            if (!password || password.length < 6) {
-                throw new Error('密码不能为空');
-            }
-            
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password
+            const { data, error } = await this.supabase.auth.signInWithPassword({
+                email: email,
+                password: password
             });
-            
-            if (error) throw error;
-            
-            hideLoading();
-            showNotification('登录成功！', 'success');
-            
-            return data.user;
-            
-        } catch (error) {
-            hideLoading();
-            console.error('登录失败:', error);
-            
-            let errorMessage = '登录失败，请检查邮箱和密码';
-            if (error.message.includes('Invalid login credentials')) {
-                errorMessage = '邮箱或密码错误';
-            } else if (error.message.includes('Email not confirmed')) {
-                errorMessage = '邮箱未验证，请先验证您的邮箱';
-            }
-            
-            showNotification(errorMessage, 'error');
-            throw error;
-        }
-    }
 
-    async signInWithProvider(provider) {
-        try {
-            const { data, error } = await supabase.auth.signInWithOAuth({
-                provider,
-                options: {
-                    redirectTo: `${window.location.origin}/auth-callback.html`
-                }
-            });
-            
             if (error) throw error;
+
+            this.currentUser = data.user;
+            await this.loadUserProfile();
             
+            hideLoading();
+            showMessage('登录成功！', 'success');
+            this.updateUIForLoggedInUser();
+            return true;
         } catch (error) {
-            console.error(`${provider}登录失败:`, error);
-            showNotification(`${provider}登录失败，请重试`, 'error');
-            throw error;
+            hideLoading();
+            showMessage(error.message, 'error');
+            return false;
         }
     }
 
     async signOut() {
         try {
-            const { error } = await supabase.auth.signOut();
-            
-            if (error) throw error;
-            
+            await this.supabase.auth.signOut();
             this.currentUser = null;
-            showNotification('已成功退出登录', 'success');
-            
+            this.isAdmin = false;
+            this.updateUIForLoggedOutUser();
+            showMessage('已退出登录', 'success');
         } catch (error) {
-            console.error('退出登录失败:', error);
-            showNotification('退出登录失败，请重试', 'error');
-            throw error;
-        }
-    }
-
-    async resetPassword(email) {
-        try {
-            showLoading();
-            
-            if (!validateEmail(email)) {
-                throw new Error('请输入有效的邮箱地址');
-            }
-            
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/reset-password.html`
-            });
-            
-            if (error) throw error;
-            
-            hideLoading();
-            showNotification('密码重置链接已发送到您的邮箱', 'success');
-            
-        } catch (error) {
-            hideLoading();
-            console.error('发送重置密码邮件失败:', error);
-            showNotification('发送重置密码邮件失败，请重试', 'error');
-            throw error;
-        }
-    }
-
-    async updatePassword(newPassword) {
-        try {
-            showLoading();
-            
-            if (!validatePassword(newPassword)) {
-                throw new Error('密码至少需要6个字符');
-            }
-            
-            const { error } = await supabase.auth.updateUser({
-                password: newPassword
-            });
-            
-            if (error) throw error;
-            
-            hideLoading();
-            showNotification('密码更新成功', 'success');
-            
-        } catch (error) {
-            hideLoading();
-            console.error('更新密码失败:', error);
-            showNotification('更新密码失败，请重试', 'error');
-            throw error;
+            console.error('退出登录错误:', error);
         }
     }
 
     async updateProfile(updates) {
         try {
-            if (!this.currentUser) {
-                throw new Error('用户未登录');
-            }
+            showLoading();
             
-            const { data, error } = await supabase
+            const { error } = await this.supabase
                 .from('profiles')
-                .update({
-                    ...updates,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', this.currentUser.id)
-                .select()
-                .single();
-            
+                .update(updates)
+                .eq('id', this.currentUser.id);
+
             if (error) throw error;
-            
+
             // 更新本地用户数据
-            this.currentUser.profile = data;
+            this.currentUser.profile = { ...this.currentUser.profile, ...updates };
             
-            showNotification('个人资料更新成功', 'success');
-            
-            return data;
-            
+            hideLoading();
+            showMessage('资料更新成功！', 'success');
+            return true;
         } catch (error) {
-            console.error('更新个人资料失败:', error);
-            showNotification('更新个人资料失败，请重试', 'error');
-            throw error;
+            hideLoading();
+            showMessage(error.message, 'error');
+            return false;
         }
     }
 
-    async getUserProfile(userId = null) {
+    async getUserById(userId) {
         try {
-            const targetUserId = userId || this.currentUser?.id;
-            
-            if (!targetUserId) {
-                return null;
-            }
-            
-            const { data, error } = await supabase
+            const { data, error } = await this.supabase
                 .from('profiles')
-                .select(`
-                    *,
-                    photos!user_id (id),
-                    followers:follows!following_id (follower_id),
-                    following:follows!follower_id (following_id)
-                `)
-                .eq('id', targetUserId)
+                .select('*')
+                .eq('id', userId)
                 .single();
-            
+
             if (error) throw error;
-            
-            // 计算关注者/关注数量
-            const profile = {
-                ...data,
-                followers_count: data.followers?.length || 0,
-                following_count: data.following?.length || 0,
-                photos_count: data.photos?.length || 0
-            };
-            
-            return profile;
-            
+            return data;
         } catch (error) {
-            console.error('获取用户资料失败:', error);
+            console.error('获取用户错误:', error);
             return null;
         }
     }
 
-    async checkUsernameAvailability(username) {
+    async searchUsers(query) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await this.supabase
                 .from('profiles')
-                .select('username')
-                .eq('username', username)
-                .single();
-            
-            // 如果没有找到记录，用户名可用
-            if (error && error.code === 'PGRST116') {
-                return true;
-            }
-            
-            // 如果是当前用户自己的用户名，也认为是可用的
-            if (this.currentUser && data && data.username === this.currentUser.profile?.username) {
-                return true;
-            }
-            
-            return false;
-            
+                .select('*')
+                .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
+                .limit(20);
+
+            if (error) throw error;
+            return data;
         } catch (error) {
-            console.error('检查用户名可用性失败:', error);
-            return false;
+            console.error('搜索用户错误:', error);
+            return [];
         }
     }
 
-    getCurrentUser() {
-        return this.currentUser;
+    updateUIForLoggedInUser() {
+        const userMenu = document.getElementById('userMenu');
+        const authModal = document.getElementById('authModal');
+        
+        if (this.currentUser && this.currentUser.profile) {
+            userMenu.innerHTML = `
+                <img src="${this.currentUser.profile.avatar_url}" 
+                     alt="${this.currentUser.profile.username}" 
+                     class="user-avatar" 
+                     id="userAvatarBtn">
+                <div class="user-dropdown" id="userDropdown">
+                    <a href="#" class="dropdown-item" data-action="profile">
+                        <i class="fas fa-user"></i> 我的资料
+                    </a>
+                    <a href="#upload" class="dropdown-item">
+                        <i class="fas fa-cloud-upload-alt"></i> 上传照片
+                    </a>
+                    <a href="#" class="dropdown-item" data-action="settings">
+                        <i class="fas fa-cog"></i> 设置
+                    </a>
+                    ${this.isAdmin ? `
+                    <a href="#" class="dropdown-item" data-action="admin">
+                        <i class="fas fa-shield-alt"></i> 管理面板
+                    </a>
+                    ` : ''}
+                    <div class="dropdown-divider"></div>
+                    <a href="#" class="dropdown-item" data-action="logout">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </a>
+                </div>
+            `;
+
+            if (authModal) {
+                authModal.style.display = 'none';
+            }
+
+            // 添加事件监听器
+            setTimeout(() => {
+                const userAvatarBtn = document.getElementById('userAvatarBtn');
+                const userDropdown = document.getElementById('userDropdown');
+                
+                if (userAvatarBtn) {
+                    userAvatarBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        userDropdown.classList.toggle('show');
+                    });
+                }
+
+                // 点击其他地方关闭下拉菜单
+                document.addEventListener('click', () => {
+                    if (userDropdown) {
+                        userDropdown.classList.remove('show');
+                    }
+                });
+
+                // 下拉菜单项点击事件
+                const dropdownItems = userDropdown.querySelectorAll('.dropdown-item');
+                dropdownItems.forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const action = e.currentTarget.dataset.action;
+                        if (action === 'logout') {
+                            e.preventDefault();
+                            this.signOut();
+                        } else if (action === 'profile') {
+                            e.preventDefault();
+                            loadUserProfilePage(this.currentUser.id);
+                        } else if (action === 'settings') {
+                            e.preventDefault();
+                            openSettingsModal();
+                        } else if (action === 'admin') {
+                            e.preventDefault();
+                            openAdminPanel();
+                        }
+                    });
+                });
+            }, 100);
+        }
+    }
+
+    updateUIForLoggedOutUser() {
+        const userMenu = document.getElementById('userMenu');
+        userMenu.innerHTML = `
+            <button class="btn-secondary" id="loginBtnNav">登录/注册</button>
+        `;
+
+        // 添加登录按钮事件监听器
+        setTimeout(() => {
+            const loginBtnNav = document.getElementById('loginBtnNav');
+            if (loginBtnNav) {
+                loginBtnNav.addEventListener('click', () => {
+                    openAuthModal();
+                });
+            }
+        }, 100);
     }
 
     isAuthenticated() {
         return !!this.currentUser;
     }
 
-    isAdmin() {
-        return this.currentUser?.profile?.is_admin || false;
-    }
-
-    dispatchAuthChange() {
-        const event = new CustomEvent('authChange', {
-            detail: { user: this.currentUser }
-        });
-        window.dispatchEvent(event);
-    }
-
-    // 监听认证状态变化
-    onAuthChange(callback) {
-        window.addEventListener('authChange', (event) => {
-            callback(event.detail.user);
-        });
+    getCurrentUser() {
+        return this.currentUser;
     }
 }
 
-// 创建全局认证管理器实例
-const authManager = new AuthManager();
+// 全局认证管理器实例
+let authManager;
 
-// 绑定UI事件
-function bindAuthUIEvents() {
-    // 登录表单
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
-            const rememberMe = document.getElementById('remember-me')?.checked || false;
-            
-            try {
-                const user = await authManager.signIn(email, password);
-                if (user) {
-                    // 关闭模态框
-                    closeAuthModals();
-                    // 重新加载页面或更新UI
-                    window.location.reload();
-                }
-            } catch (error) {
-                // 错误已经在signIn方法中处理
+// 初始化认证管理器
+document.addEventListener('DOMContentLoaded', () => {
+    authManager = new AuthManager();
+});
+
+// 工具函数
+function showLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) loading.classList.add('active');
+}
+
+function hideLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) loading.classList.remove('active');
+}
+
+function showMessage(message, type = 'info') {
+    // 移除之前的消息
+    const existingMessages = document.querySelectorAll('.message');
+    existingMessages.forEach(msg => msg.remove());
+    
+    // 创建消息元素
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-${type}`;
+    messageDiv.textContent = message;
+    
+    document.body.appendChild(messageDiv);
+    
+    // 3秒后移除
+    setTimeout(() => {
+        messageDiv.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                document.body.removeChild(messageDiv);
             }
-        });
+        }, 300);
+    }, 3000);
+}
+
+function openAuthModal() {
+    const authModal = document.getElementById('authModal');
+    if (authModal) {
+        authModal.style.display = 'block';
     }
-    
-    // 注册表单
-    const signupForm = document.getElementById('signup-form');
-    if (signupForm) {
-        signupForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const username = document.getElementById('signup-username').value;
-            const email = document.getElementById('signup-email').value;
-            const password = document.getElementById('signup-password').value;
-            const confirmPassword = document.getElementById('signup-confirm-password').value;
-            
-            if (password !== confirmPassword) {
-                showNotification('两次输入的密码不一致', 'error');
-                return;
-            }
-            
-            try {
-                const user = await authManager.signUp(email, password, username);
-                if (user) {
-                    closeAuthModals();
-                    showNotification('注册成功！请检查您的邮箱以验证账户', 'success');
-                }
-            } catch (error) {
-                // 错误已经在signUp方法中处理
-            }
-        });
+}
+
+function closeAuthModal() {
+    const authModal = document.getElementById('authModal');
+    if (authModal) {
+        authModal.style.display = 'none';
     }
-    
-    // 忘记密码表单
-    const forgotPasswordForm = document.getElementById('forgot-password-form');
-    if (forgotPasswordForm) {
-        forgotPasswordForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const email = document.getElementById('reset-email').value;
-            
-            try {
-                await authManager.resetPassword(email);
-                closeAuthModals();
-            } catch (error) {
-                // 错误已经在resetPassword方法中处理
-            }
-        });
-    }
-    
-    // 社交登录按钮
-    const googleLoginBtn = document.getElementById('google-login');
-    const googleSignupBtn = document.getElementById('google-signup');
-    const facebookLoginBtn = document.getElementById('facebook-login');
-    const facebookSignupBtn = document.getElementById('facebook-signup');
-    const githubLoginBtn = document.getElementById('github-login');
-    const githubSignupBtn = document.getElementById('github-signup');
-    
-    [googleLoginBtn, googleSignupBtn].forEach(btn => {
-        if (btn) {
-            btn.addEventListener('click', () => authManager.signInWithProvider('google'));
-        }
-    });
-    
-    [facebookLoginBtn, facebookSignupBtn].forEach(btn => {
-        if (btn) {
-            btn.addEventListener('click', () => authManager.signInWithProvider('facebook'));
-        }
-    });
-    
-    [githubLoginBtn, githubSignupBtn].forEach(btn => {
-        if (btn) {
-            btn.addEventListener('click', () => authManager.signInWithProvider('github'));
-        }
-    });
-    
-    // 密码显示/隐藏切换
-    const passwordToggles = document.querySelectorAll('.password-toggle i');
-    passwordToggles.forEach(toggle => {
-        toggle.addEventListener('click', function() {
-            const input = this.closest('.form-group').querySelector('input');
-            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
-            input.setAttribute('type', type);
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-        });
-    });
 }
 
-function closeAuthModals() {
-    const modals = document.querySelectorAll('.modal');
-    modals.forEach(modal => {
-        modal.classList.remove('active');
-    });
-    document.body.style.overflow = '';
-}
-
-// 检查认证状态
-function checkAuth() {
-    return authManager.isAuthenticated();
-}
-
-// 获取用户资料
-function getUserProfile(userId) {
-    return authManager.getUserProfile(userId);
-}
-
-// 页面加载时绑定UI事件
-document.addEventListener('DOMContentLoaded', bindAuthUIEvents);
-
-export { 
-    authManager, 
-    checkAuth, 
-    getUserProfile,
-    signUp: authManager.signUp.bind(authManager),
-    signIn: authManager.signIn.bind(authManager),
-    signOut: authManager.signOut.bind(authManager),
-    resetPassword: authManager.resetPassword.bind(authManager),
-    updateProfile: authManager.updateProfile.bind(authManager)
-};
+// 暴露全局函数
+window.authManager = authManager;
+window.openAuthModal = openAuthModal;
+window.closeAuthModal = closeAuthModal;
+window.showMessage = showMessage;
