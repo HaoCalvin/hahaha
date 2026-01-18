@@ -1,4 +1,4 @@
-// 通用工具函数 - 独立封装，供app.js调用
+// 通用工具函数 - 修复所有事件绑定，全局挂载供app.js调用
 /**
  * 懒加载图片初始化
  */
@@ -8,7 +8,7 @@ function initLazyLoad() {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         const img = entry.target;
-        img.src = img.src;
+        img.src = img.dataset.src || img.src;
         img.classList.add('lazy-load-loaded');
         lazyLoadObserver.unobserve(img);
       }
@@ -25,243 +25,257 @@ function initNavbarScroll() {
   const navbar = document.getElementById('navbar');
   window.addEventListener('scroll', () => {
     if (window.scrollY > 50) {
-      navbar.classList.add('navbar-scrolled');
+      navbar.classList.add('bg-white/95', 'dark:bg-gray-800/95', 'shadow-sm');
     } else {
-      navbar.classList.remove('navbar-scrolled');
+      navbar.classList.remove('bg-white/95', 'dark:bg-gray-800/95', 'shadow-sm');
     }
   });
 }
 
 /**
- * 初始化所有事件监听（解耦，避免app.js冗余）
+ * 初始化所有事件监听（核心：修复登录/注册按钮绑定）
  */
 function initEventListeners() {
-  // 主题切换按钮
+  // 登录按钮核心绑定
+  bindLoginCore();
+  // 主题切换
   bindThemeButtons();
-  // 模态框关闭按钮
+  // 模态框关闭
   bindModalClose();
-  // 导航链接点击
+  // 导航链接
   bindNavLinks();
-  // 表单提交事件
+  // 所有表单提交
   bindFormSubmits();
   // 搜索按钮
   bindSearchButtons();
-  // 我的作品筛选
+  // 我的照片筛选
   bindMyPhotosFilter();
-  // 关注/编辑按钮
-  bindProfileButtons();
-  // 头像上传选择
+  // 头像上传
   bindAvatarUpload();
   // 回车搜索
   bindEnterSearch();
 }
 
 /**
- * 绑定主题切换按钮事件
+ * 核心：登录/注册按钮绑定（修复无响应）
+ */
+function bindLoginCore() {
+  // 我的页面登录按钮
+  document.getElementById('login-btn').addEventListener('click', () => {
+    document.getElementById('login-modal').classList.remove('hidden');
+  });
+  // 登录/注册互转
+  document.getElementById('to-register-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('login-modal').classList.add('hidden');
+    document.getElementById('register-modal').classList.remove('hidden');
+  });
+  document.getElementById('to-login-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('register-modal').classList.add('hidden');
+    document.getElementById('login-modal').classList.remove('hidden');
+  });
+  // 忘记密码链接
+  document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('login-modal').classList.add('hidden');
+    document.getElementById('forgot-password-modal').classList.remove('hidden');
+  });
+}
+
+/**
+ * 主题切换按钮绑定
  */
 function bindThemeButtons() {
   // 电脑端
-  document.getElementById('light-mode').addEventListener('click', () => switchTheme('light'));
-  document.getElementById('dark-mode').addEventListener('click', () => switchTheme('dark'));
-  document.getElementById('white-mode').addEventListener('click', () => switchTheme('white'));
+  document.getElementById('light-mode').addEventListener('click', () => window.switchTheme('light'));
+  document.getElementById('dark-mode').addEventListener('click', () => window.switchTheme('dark'));
   // 手机端
-  document.getElementById('mobile-light-mode').addEventListener('click', () => switchTheme('light'));
-  document.getElementById('mobile-dark-mode').addEventListener('click', () => switchTheme('dark'));
-  document.getElementById('mobile-white-mode').addEventListener('click', () => switchTheme('white'));
+  document.getElementById('mobile-light-mode').addEventListener('click', () => window.switchTheme('light'));
+  document.getElementById('mobile-dark-mode').addEventListener('click', () => window.switchTheme('dark'));
 }
 
 /**
- * 绑定模态框关闭事件
+ * 模态框关闭绑定
  */
 function bindModalClose() {
   document.querySelectorAll('.modal-close').forEach(btn => {
-    btn.addEventListener('click', hideAllModals);
+    btn.addEventListener('click', () => window.hideAllModals());
   });
-  // 点击模态框外部关闭
+  // 点击外部关闭模态框
   window.addEventListener('click', (e) => {
-    if (e.target.hasAttribute('id') && e.target.id.endsWith('-modal')) {
-      hideAllModals();
+    if (e.target.classList.contains('modal-close') || e.target.id.endsWith('-modal')) {
+      window.hideAllModals();
     }
+  });
+  // 按ESC关闭
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.hideAllModals();
   });
 }
 
 /**
- * 绑定导航链接点击事件
+ * 导航链接绑定
  */
 function bindNavLinks() {
-  // 电脑端导航
+  // 导航链接切换页面
   document.querySelectorAll('.nav-link').forEach(link => {
     link.addEventListener('click', (e) => {
+      e.preventDefault();
       const id = e.target.getAttribute('href').slice(1);
-      showContentSection(id);
-      // 关闭手机菜单
+      window.showContentSection(id);
       document.getElementById('mobile-menu').classList.add('hidden');
     });
   });
-  // 手机端导航
+  // 手机菜单开关
   document.getElementById('mobile-menu-btn').addEventListener('click', () => {
     document.getElementById('mobile-menu').classList.toggle('hidden');
   });
   // 首页探索按钮
   document.getElementById('home-explore-btn').addEventListener('click', () => {
-    showContentSection('explore');
+    window.showContentSection('explore');
   });
   // 退出登录
-  document.getElementById('logout-btn').addEventListener('click', logout);
+  document.getElementById('logout-btn').addEventListener('click', () => window.logout());
   document.getElementById('mobile-logout-btn').addEventListener('click', () => {
-    logout();
+    window.logout();
     document.getElementById('mobile-menu').classList.add('hidden');
   });
   // 上传按钮
   document.getElementById('upload-btn').addEventListener('click', () => {
-    document.getElementById('upload-modal').classList.remove('hidden');
+    if (window.currentUser) document.getElementById('upload-modal').classList.remove('hidden');
+    else window.showToast(window.MESSAGES.NEED_LOGIN, 'error');
   });
   document.getElementById('mobile-upload-btn').addEventListener('click', () => {
-    document.getElementById('upload-modal').classList.remove('hidden');
-    document.getElementById('mobile-menu').classList.add('hidden');
+    if (window.currentUser) {
+      document.getElementById('upload-modal').classList.remove('hidden');
+      document.getElementById('mobile-menu').classList.add('hidden');
+    } else {
+      window.showToast(window.MESSAGES.NEED_LOGIN, 'error');
+    }
   });
   // 发布讨论按钮
   document.getElementById('create-discussion-btn').addEventListener('click', () => {
-    document.getElementById('create-discussion-modal').classList.remove('hidden');
-  });
-  // 编辑资料按钮
-  document.getElementById('edit-profile-btn').addEventListener('click', () => {
-    showContentSection('edit-profile');
+    if (window.currentUser) document.getElementById('create-discussion-modal').classList.remove('hidden');
+    else window.showToast(window.MESSAGES.NEED_LOGIN, 'error');
   });
   // 发现页排序
   document.getElementById('explore-sort').addEventListener('change', (e) => {
-    loadExploreData(e.target.value);
+    window.loadExploreData(e.target.value);
   });
 }
 
 /**
- * 绑定所有表单提交事件
+ * 所有表单提交绑定
  */
 function bindFormSubmits() {
   // 登录表单
   document.getElementById('login-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
+    const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     const remember = document.getElementById('login-remember').checked;
-    login(email, password, remember);
+    window.login(email, password, remember);
   });
   // 注册表单
   document.getElementById('register-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const email = document.getElementById('register-email').value;
+    const email = document.getElementById('register-email').value.trim();
     const password = document.getElementById('register-password').value;
     const confirmPwd = document.getElementById('register-confirm-password').value;
     if (password !== confirmPwd) {
-      showToast('两次密码不一致', 'error');
+      window.showToast('两次输入的密码不一致', 'error');
       return;
     }
-    register(email, password);
+    window.register(email, password);
   });
   // 忘记密码表单
   document.getElementById('forgot-password-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const email = document.getElementById('forgot-email').value;
-    forgotPassword(email);
+    const email = document.getElementById('forgot-email').value.trim();
+    window.forgotPassword(email);
   });
   // 编辑资料表单
   document.getElementById('edit-profile-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const username = document.getElementById('edit-username').value;
-    const bio = document.getElementById('edit-bio').value;
-    if (!username || username.trim() === '') {
-      showToast('用户名不能为空', 'error');
+    const username = document.getElementById('edit-username').value.trim();
+    const bio = document.getElementById('edit-bio').value.trim();
+    if (username.length < 3 || username.length > 20) {
+      window.showToast('用户名需3-20个字符', 'error');
       return;
     }
-    updateUserProfile({ username, bio });
+    window.updateUserProfile({ username, bio });
   });
   // 上传照片表单
   document.getElementById('upload-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const title = document.getElementById('upload-title').value;
-    const keywords = document.getElementById('upload-keywords').value;
+    const title = document.getElementById('upload-title').value.trim();
+    const keywords = document.getElementById('upload-keywords').value.split(',').map(k => k.trim()).filter(k => k);
     const isPrivate = document.getElementById('upload-private').checked;
-    publishPhoto({ title, keywords, isPrivate });
+    if (!title) {
+      window.showToast('请填写照片标题', 'error');
+      return;
+    }
+    if (keywords.length === 0) {
+      window.showToast('请填写至少一个关键词', 'error');
+      return;
+    }
+    if (window.uploadedImages.length === 0) {
+      window.showToast('请先选择要上传的照片', 'error');
+      return;
+    }
+    window.publishPhoto({ title, keywords, isPrivate });
   });
   // 发布讨论表单
   document.getElementById('create-discussion-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const title = document.getElementById('discussion-title').value;
-    const content = document.getElementById('discussion-content').value;
-    if (content.trim().length < 10) {
-      showToast('讨论内容最少10个字符', 'error');
+    const title = document.getElementById('discussion-title').value.trim();
+    const content = document.getElementById('discussion-content').value.trim();
+    if (title.length < 5 || title.length > 100) {
+      window.showToast('标题需5-100个字符', 'error');
       return;
     }
-    publishDiscussion({ title, content });
+    if (content.length < 10 || content.length > 5000) {
+      window.showToast('内容需10-5000个字符', 'error');
+      return;
+    }
+    window.publishDiscussion({ title, content });
   });
-  // 评论表单
-  document.getElementById('comment-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const content = document.getElementById('comment-input').value;
-    publishComment(currentPhotoId, content);
-  });
-  // 社交登录
-  document.getElementById('google-login').addEventListener('click', () => socialLogin('google'));
-  document.getElementById('facebook-login').addEventListener('click', () => socialLogin('facebook'));
-  document.getElementById('google-register').addEventListener('click', () => socialLogin('google'));
-  document.getElementById('facebook-register').addEventListener('click', () => socialLogin('facebook'));
-  // 忘记密码链接
-  document.getElementById('forgot-password-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    hideAllModals();
-    document.getElementById('forgot-password-modal').classList.remove('hidden');
-  });
-  // 登录/注册互转
-  document.getElementById('to-register-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    hideAllModals();
-    document.getElementById('register-modal').classList.remove('hidden');
-  });
-  document.getElementById('to-login-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    hideAllModals();
-    document.getElementById('login-modal').classList.remove('hidden');
-  });
+  // 第三方登录
+  document.getElementById('google-login').addEventListener('click', () => window.socialLogin('google'));
+  document.getElementById('google-register').addEventListener('click', () => window.socialLogin('google'));
+  document.getElementById('facebook-login').addEventListener('click', () => window.socialLogin('facebook'));
+  document.getElementById('facebook-register').addEventListener('click', () => window.socialLogin('facebook'));
 }
 
 /**
- * 绑定搜索按钮事件
+ * 搜索按钮绑定
  */
 function bindSearchButtons() {
   document.getElementById('search-btn').addEventListener('click', () => {
-    const keyword = document.getElementById('search-input').value;
-    searchContent(keyword);
+    const keyword = document.getElementById('search-input').value.trim();
+    if (keyword) window.searchContent(keyword);
   });
   document.getElementById('mobile-search-btn').addEventListener('click', () => {
-    const keyword = document.getElementById('mobile-search-input').value;
-    searchContent(keyword);
-    document.getElementById('mobile-menu').classList.add('hidden');
+    const keyword = document.getElementById('mobile-search-input').value.trim();
+    if (keyword) {
+      window.searchContent(keyword);
+      document.getElementById('mobile-menu').classList.add('hidden');
+    }
   });
 }
 
 /**
- * 绑定我的作品筛选按钮事件
+ * 我的照片筛选绑定
  */
 function bindMyPhotosFilter() {
-  document.getElementById('my-photos-all').addEventListener('click', () => loadMyPhotos('all'));
-  document.getElementById('my-photos-public').addEventListener('click', () => loadMyPhotos('public'));
-  document.getElementById('my-photos-private').addEventListener('click', () => loadMyPhotos('private'));
+  document.getElementById('my-photos-all').addEventListener('click', () => window.loadMyPhotos('all'));
+  document.getElementById('my-photos-public').addEventListener('click', () => window.loadMyPhotos('public'));
+  document.getElementById('my-photos-private').addEventListener('click', () => window.loadMyPhotos('private'));
 }
 
 /**
- * 绑定个人主页按钮事件
- */
-function bindProfileButtons() {
-  document.getElementById('follow-btn').addEventListener('click', () => {
-    toggleFollow(currentProfileUserId);
-  });
-  document.getElementById('unfollow-btn').addEventListener('click', () => {
-    toggleFollow(currentProfileUserId);
-  });
-}
-
-/**
- * 绑定头像上传选择事件
+ * 头像上传绑定
  */
 function bindAvatarUpload() {
   document.getElementById('edit-avatar-preview').addEventListener('click', () => {
@@ -269,59 +283,74 @@ function bindAvatarUpload() {
   });
   document.getElementById('edit-avatar-input').addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) {
-      uploadAvatar(file);
-      // 重置input，避免重复选择同一文件不触发
-      e.target.value = '';
+    if (file && window.isImageFile(file)) {
+      window.uploadAvatar(file);
+      e.target.value = ''; // 重置避免重复选择不触发
+    } else if (file) {
+      window.showToast('请选择JPG/PNG/GIF格式的图片', 'error');
     }
   });
 }
 
 /**
- * 绑定回车搜索事件
+ * 回车搜索绑定
  */
 function bindEnterSearch() {
   document.getElementById('search-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const keyword = e.target.value;
-      searchContent(keyword);
+      const keyword = e.target.value.trim();
+      if (keyword) window.searchContent(keyword);
     }
   });
   document.getElementById('mobile-search-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const keyword = e.target.value;
-      searchContent(keyword);
-      document.getElementById('mobile-menu').classList.add('hidden');
+      const keyword = e.target.value.trim();
+      if (keyword) {
+        window.searchContent(keyword);
+        document.getElementById('mobile-menu').classList.add('hidden');
+      }
     }
   });
 }
 
 /**
- * 数字千分位格式化
- * @param {number} num 要格式化的数字
- * @returns {string} 千分位格式化后的字符串
- */
-function formatThousand(num) {
-  if (!num || isNaN(num)) return '0';
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-/**
- * 检查文件类型是否为图片
+ * 检查是否为图片文件
  * @param {File} file 文件对象
  * @returns {boolean} 是否为图片
  */
 function isImageFile(file) {
-  if (!file) return false;
-  const imageTypes = ['image/jpg', 'image/jpeg', 'image/png', 'image/gif'];
-  return imageTypes.includes(file.type);
+  const types = ['image/jpg', 'image/jpeg', 'image/png', 'image/gif'];
+  return types.includes(file.type);
+}
+
+/**
+ * 显示吐司提示
+ * @param {string} msg 提示信息
+ * @param {string} type 类型：success/error/info
+ */
+function showToast(msg, type = 'info') {
+  // 移除已存在的提示
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const toast = document.createElement('div');
+  toast.className = `toast fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 ${
+    type === 'success' ? 'bg-green-500 text-white' :
+    type === 'error' ? 'bg-red-500 text-white' :
+    'bg-gray-800 text-white'
+  }`;
+  toast.innerText = msg;
+  document.body.appendChild(toast);
+  // 自动消失
+  setTimeout(() => {
+    toast.classList.add('opacity-0', 'translate-y-4');
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
 }
 
 /**
  * 防抖函数
  * @param {Function} fn 执行函数
- * @param {number} delay 延迟时间(ms)
- * @returns {Function} 防抖后的函数
+ * @param {number} delay 延迟时间
+ * @returns {Function} 防抖后函数
  */
 function debounce(fn, delay = 300) {
   let timer = null;
@@ -331,19 +360,16 @@ function debounce(fn, delay = 300) {
   };
 }
 
-/**
- * 节流函数
- * @param {Function} fn 执行函数
- * @param {number} interval 间隔时间(ms)
- * @returns {Function} 节流后的函数
- */
-function throttle(fn, interval = 300) {
-  let lastTime = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - lastTime >= interval) {
-      lastTime = now;
-      fn.apply(this, args);
-    }
-  };
-}
+// 全局挂载所有工具函数，供app.js调用
+window.initLazyLoad = initLazyLoad;
+window.initNavbarScroll = initNavbarScroll;
+window.initEventListeners = initEventListeners;
+window.isImageFile = isImageFile;
+window.showToast = showToast;
+window.debounce = debounce;
+
+// 导出供模块引入（备用）
+export {
+  initLazyLoad, initNavbarScroll, initEventListeners,
+  isImageFile, showToast, debounce
+};

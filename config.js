@@ -1,4 +1,4 @@
-// 全局配置中心 - 已填好你的Supabase信息，直接使用
+// 全局配置中心 - 已填好你的Supabase URL和ANON_KEY，无需修改
 export const SUPABASE_CONFIG = {
   URL: "https://szrybhleozpzfwhaoiha.supabase.co",
   ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU",
