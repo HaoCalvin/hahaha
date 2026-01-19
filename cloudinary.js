@@ -5,7 +5,7 @@
 
 // Cloudinary配置
 const CLOUDINARY_CLOUD_NAME = 'dy77idija';
-const CLOUDINARY_UPLOAD_PRESET = 'photo-share-app';
+const CLOUDINARY_UPLOAD_PRESET = 'photo_share_app';
 const CLOUDINARY_API_KEY = '263478638476192';
 const CLOUDINARY_API_SECRET = 'eplFKZdw3w0jVl2RSaJmNK9tzo';
 
