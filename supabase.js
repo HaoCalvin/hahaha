@@ -38,6 +38,9 @@ async function loadSupabase() {
 const SUPABASE_URL = 'https://szrybhleozpzfwhaoiha.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU';
 
+// 管理员用户ID
+const ADMIN_USER_ID = 'd22a82b2-7343-43f9-a417-126bea312fdd';
+
 // 主初始化函数
 async function initializeSupabase() {
     try {
@@ -98,115 +101,49 @@ async function ensureSupabaseInitialized() {
     return await initializeSupabase();
 }
 
+// 获取当前用户（从 Supabase Auth）
+async function getCurrentUser() {
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { data, error } = await supabase.auth.getUser();
+        
+        if (error) {
+            console.error('获取当前用户错误:', error);
+            return null;
+        }
+        
+        return data.user;
+    } catch (error) {
+        console.error('获取当前用户错误:', error);
+        return null;
+    }
+}
+
+// 检查是否为管理员
+function isAdmin(user) {
+    if (!user) return false;
+    return user.id === ADMIN_USER_ID;
+}
+
 // 初始化数据库表（第一次运行时调用）
 async function initializeDatabase() {
     try {
         const supabase = await ensureSupabaseInitialized();
         console.log('正在初始化数据库...');
         
-        // 创建profiles表（如果不存在）
-        await createProfilesTable();
-        
-        // 创建photos表（如果不存在）
-        await createPhotosTable();
-        
-        // 创建likes表（如果不存在）
-        await createLikesTable();
-        
-        // 创建comments表（如果不存在）
-        await createCommentsTable();
-        
-        // 创建follows表（如果不存在）
-        await createFollowsTable();
+        // 检查表是否存在，如果不存在会在首次使用时自动创建
+        try {
+            const { error } = await supabase
+                .from(TABLES.PROFILES)
+                .select('*')
+                .limit(1);
+        } catch (error) {
+            console.log('数据库表将在首次使用时自动创建');
+        }
         
         console.log('数据库初始化完成');
     } catch (error) {
         console.error('数据库初始化错误:', error);
-    }
-}
-
-// 创建profiles表
-async function createProfilesTable() {
-    try {
-        const supabase = await ensureSupabaseInitialized();
-        const { error } = await supabase
-            .from(TABLES.PROFILES)
-            .select('*')
-            .limit(1);
-        
-        if (error && error.code === 'PGRST116') {
-            console.log('profiles表不存在，将在首次使用时自动创建');
-        }
-    } catch (error) {
-        console.error('检查profiles表错误:', error);
-    }
-}
-
-// 创建photos表
-async function createPhotosTable() {
-    try {
-        const supabase = await ensureSupabaseInitialized();
-        const { error } = await supabase
-            .from(TABLES.PHOTOS)
-            .select('*')
-            .limit(1);
-        
-        if (error && error.code === 'PGRST116') {
-            console.log('photos表不存在，将在首次使用时自动创建');
-        }
-    } catch (error) {
-        console.error('检查photos表错误:', error);
-    }
-}
-
-// 创建likes表
-async function createLikesTable() {
-    try {
-        const supabase = await ensureSupabaseInitialized();
-        const { error } = await supabase
-            .from(TABLES.LIKES)
-            .select('*')
-            .limit(1);
-        
-        if (error && error.code === 'PGRST116') {
-            console.log('likes表不存在，将在首次使用时自动创建');
-        }
-    } catch (error) {
-        console.error('检查likes表错误:', error);
-    }
-}
-
-// 创建comments表
-async function createCommentsTable() {
-    try {
-        const supabase = await ensureSupabaseInitialized();
-        const { error } = await supabase
-            .from(TABLES.COMMENTS)
-            .select('*')
-            .limit(1);
-        
-        if (error && error.code === 'PGRST116') {
-            console.log('comments表不存在，将在首次使用时自动创建');
-        }
-    } catch (error) {
-        console.error('检查comments表错误:', error);
-    }
-}
-
-// 创建follows表
-async function createFollowsTable() {
-    try {
-        const supabase = await ensureSupabaseInitialized();
-        const { error } = await supabase
-            .from(TABLES.FOLLOWS)
-            .select('*')
-            .limit(1);
-        
-        if (error && error.code === 'PGRST116') {
-            console.log('follows表不存在，将在首次使用时自动创建');
-        }
-    } catch (error) {
-        console.error('检查follows表错误:', error);
     }
 }
 
@@ -520,13 +457,36 @@ async function getPhotoById(photoId) {
 async function createPhoto(photoData) {
     try {
         const supabase = await ensureSupabaseInitialized();
+        
+        // 获取当前用户
+        const currentUser = await getCurrentUser();
+        if (!currentUser) {
+            throw new Error('用户未登录，无法上传照片');
+        }
+        
+        // 确保 user_id 与当前用户匹配（管理员除外）
+        if (currentUser.id !== ADMIN_USER_ID && photoData.user_id !== currentUser.id) {
+            console.warn('用户ID不匹配，使用当前登录用户ID');
+            photoData.user_id = currentUser.id;
+        }
+        
         const { data, error } = await supabase
             .from(TABLES.PHOTOS)
             .insert([photoData])
             .select()
             .single();
         
-        if (error) throw error;
+        if (error) {
+            console.error('创建照片错误详情:', error);
+            
+            // 如果是 RLS 错误，提供更详细的提示
+            if (error.message.includes('row-level security') || error.code === '42501') {
+                throw new Error('权限错误：请确保已正确设置数据库行级安全策略。需要在Supabase控制台为photos表设置RLS策略。');
+            }
+            
+            throw error;
+        }
+        
         return data;
     } catch (error) {
         console.error('创建照片错误:', error);
@@ -550,16 +510,8 @@ async function deletePhoto(photoId, userId) {
         }
         
         // 检查是否是照片所有者或管理员
-        if (photo.user_id !== userId) {
-            const { data: profile } = await supabase
-                .from(TABLES.PROFILES)
-                .select('is_admin')
-                .eq('id', userId)
-                .single();
-            
-            if (!profile || !profile.is_admin) {
-                throw new Error('没有权限删除此照片');
-            }
+        if (photo.user_id !== userId && userId !== ADMIN_USER_ID) {
+            throw new Error('没有权限删除此照片');
         }
         
         // 删除照片
@@ -872,8 +824,10 @@ window.supabaseFunctions = {
     ensureInitialized: ensureSupabaseInitialized,
     
     // 用户函数
+    getCurrentUser,
     getUserProfile,
     updateUserProfile,
+    isAdmin,
     
     // 照片函数
     getPhotos,

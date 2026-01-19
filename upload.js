@@ -216,7 +216,8 @@ function removeSelectedImage() {
 // 处理上传提交
 async function handleUploadSubmit() {
     // 检查用户是否登录
-    if (!window.auth?.isAuthenticated()) {
+    const currentUser = await window.supabaseFunctions?.getCurrentUser();
+    if (!currentUser) {
         showUploadError('请先登录后再上传图片', 'error');
         showAuthModal();
         return;
@@ -385,21 +386,20 @@ async function compressImageIfNeeded(file) {
 
 // 保存图片到数据库
 async function savePhotoToDatabase(cloudinaryResponse, keywords, description) {
-    const currentUser = window.auth?.getCurrentUser();
-    const currentProfile = window.auth?.getCurrentProfile();
-    
-    if (!currentUser || !currentProfile) {
-        throw new Error('用户未登录');
-    }
-    
     try {
+        // 获取当前用户
+        const currentUser = await window.supabaseFunctions.getCurrentUser();
+        if (!currentUser) {
+            throw new Error('用户未登录或登录状态无效');
+        }
+        
         // 生成缩略图URL
         const thumbnailUrl = window.cloudinary.generateThumbnailUrl(cloudinaryResponse.public_id);
         const optimizedUrl = window.cloudinary.generateOptimizedUrl(cloudinaryResponse.public_id);
         
         // 准备照片数据
         const photoData = {
-            user_id: currentUser.id,
+            user_id: currentUser.id,  // 使用 Supabase auth 的 user.id
             image_url: optimizedUrl,
             thumbnail_url: thumbnailUrl,
             cloudinary_id: cloudinaryResponse.public_id,
@@ -414,7 +414,7 @@ async function savePhotoToDatabase(cloudinaryResponse, keywords, description) {
         
         console.log('保存到数据库的照片数据:', photoData);
         
-        // 确保supabaseFunctions已初始化
+        // 确保 supabaseFunctions 已初始化
         if (!window.supabaseFunctions) {
             throw new Error('数据库功能未初始化');
         }
@@ -430,10 +430,10 @@ async function savePhotoToDatabase(cloudinaryResponse, keywords, description) {
     } catch (error) {
         console.error('保存到数据库错误:', error);
         
-        // 如果数据库保存失败，尝试删除Cloudinary上的图片
+        // 如果数据库保存失败，尝试删除 Cloudinary 上的图片
         try {
             if (cloudinaryResponse.public_id) {
-                console.log('尝试删除Cloudinary图片:', cloudinaryResponse.public_id);
+                console.log('尝试删除 Cloudinary 图片:', cloudinaryResponse.public_id);
                 await window.cloudinary.deleteImageFromCloudinary(cloudinaryResponse.public_id);
             }
         } catch (deleteError) {
@@ -601,7 +601,8 @@ function closeUploadModal() {
 // 显示上传模态框
 function showUploadModal() {
     // 检查用户是否登录
-    if (!window.auth?.isAuthenticated()) {
+    const currentUser = window.supabaseFunctions?.getCurrentUser();
+    if (!currentUser) {
         if (window.auth?.showNotification) {
             window.auth.showNotification('请先登录后再上传图片', 'warning');
         }
@@ -651,11 +652,6 @@ async function checkUploadAvailability() {
         // 检查Supabase模块
         if (!window.supabaseFunctions) {
             throw new Error('数据库模块未加载');
-        }
-        
-        // 检查认证模块
-        if (!window.auth) {
-            throw new Error('认证模块未加载');
         }
         
         console.log('✅ 上传功能检查通过');
