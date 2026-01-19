@@ -1,5 +1,5 @@
 /**
- * 用户认证管理模块
+ * 用户认证管理模块 - 修复版本
  * 处理注册、登录、会话管理和用户资料
  */
 
@@ -8,11 +8,54 @@ let currentUser = null;
 let currentProfile = null;
 let authStateListeners = [];
 
+// 等待 Supabase 初始化的函数
+async function ensureAuthInitialized() {
+    if (!window.supabaseClient) {
+        console.log('等待 Supabase 初始化...');
+        
+        // 如果 supabaseFunctions 存在，使用它初始化
+        if (window.supabaseFunctions && window.supabaseFunctions.ensureInitialized) {
+            await window.supabaseFunctions.ensureInitialized();
+        } else {
+            // 等待 Supabase 客户端可用
+            await waitForSupabase();
+        }
+    }
+    return window.supabaseClient;
+}
+
+// 等待 Supabase 可用的函数
+function waitForSupabase() {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 30; // 30次尝试，每次100ms = 3秒超时
+        
+        const checkInterval = setInterval(() => {
+            attempts++;
+            
+            if (window.supabaseClient) {
+                clearInterval(checkInterval);
+                resolve(window.supabaseClient);
+            } else if (attempts >= maxAttempts) {
+                clearInterval(checkInterval);
+                reject(new Error('Supabase 初始化超时 (3秒)'));
+            }
+        }, 100);
+    });
+}
+
 // 初始化认证系统
 async function initAuthSystem() {
     console.log('正在初始化认证系统...');
     
     try {
+        // 确保 Supabase 客户端已初始化
+        const supabase = await ensureAuthInitialized();
+        
+        if (!supabase) {
+            throw new Error('Supabase 客户端初始化失败');
+        }
+        
         // 检查现有会话
         await checkCurrentSession();
         
@@ -22,16 +65,17 @@ async function initAuthSystem() {
         // 设置自动刷新令牌
         setupTokenRefresh();
         
-        console.log('认证系统初始化完成');
+        console.log('✅ 认证系统初始化完成');
     } catch (error) {
-        console.error('认证系统初始化失败:', error);
+        console.error('❌ 认证系统初始化失败:', error);
     }
 }
 
 // 检查当前会话
 async function checkCurrentSession() {
     try {
-        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        const supabase = await ensureAuthInitialized();
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
             console.error('获取会话错误:', error);
@@ -78,8 +122,10 @@ async function loadUserProfile() {
     }
     
     try {
+        const supabase = await ensureAuthInitialized();
+        
         // 尝试从profiles表获取资料
-        const { data: profile, error } = await supabaseClient
+        const { data: profile, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', currentUser.id)
@@ -113,6 +159,8 @@ async function createUserProfile() {
     }
     
     try {
+        const supabase = await ensureAuthInitialized();
+        
         // 从用户元数据或邮箱获取用户名
         const username = currentUser.user_metadata?.username || 
                         currentUser.email?.split('@')[0] || 
@@ -134,7 +182,7 @@ async function createUserProfile() {
             updated_at: new Date().toISOString()
         };
         
-        const { data, error } = await supabaseClient
+        const { data, error } = await supabase
             .from('profiles')
             .insert([profileData])
             .select()
@@ -146,7 +194,7 @@ async function createUserProfile() {
                 const uniqueUsername = `${cleanUsername}_${currentUser.id.substring(0, 4)}`;
                 profileData.username = uniqueUsername;
                 
-                const { data: retryData, error: retryError } = await supabaseClient
+                const { data: retryData, error: retryError } = await supabase
                     .from('profiles')
                     .insert([profileData])
                     .select()
@@ -171,6 +219,7 @@ async function createUserProfile() {
 // 用户注册
 async function registerUser(userData) {
     try {
+        const supabase = await ensureAuthInitialized();
         const { username, email, password } = userData;
         
         // 验证输入
@@ -190,7 +239,7 @@ async function registerUser(userData) {
         const cleanUsername = username.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
         
         // 检查用户名是否已存在
-        const { data: existingUser } = await supabaseClient
+        const { data: existingUser } = await supabase
             .from('profiles')
             .select('username')
             .eq('username', cleanUsername)
@@ -201,7 +250,7 @@ async function registerUser(userData) {
         }
         
         // 注册新用户
-        const { data, error } = await supabaseClient.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
             email: email.trim(),
             password: password,
             options: {
@@ -245,6 +294,7 @@ async function registerUser(userData) {
 // 用户登录
 async function loginUser(credentials) {
     try {
+        const supabase = await ensureAuthInitialized();
         const { identifier, password } = credentials;
         
         // 验证输入
@@ -256,7 +306,7 @@ async function loginUser(credentials) {
         
         // 如果标识符不包含@，尝试查找用户名对应的邮箱
         if (!identifier.includes('@')) {
-            const { data: profile } = await supabaseClient
+            const { data: profile } = await supabase
                 .from('profiles')
                 .select('email')
                 .eq('username', identifier)
@@ -270,7 +320,7 @@ async function loginUser(credentials) {
         }
         
         // 执行登录
-        const { data, error } = await supabaseClient.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
             email: email.trim(),
             password: password
         });
@@ -316,7 +366,8 @@ async function loginWithUsername(username, password) {
 // 用户退出登录
 async function logoutUser() {
     try {
-        const { error } = await supabaseClient.auth.signOut();
+        const supabase = await ensureAuthInitialized();
+        const { error } = await supabase.auth.signOut();
         
         if (error) throw error;
         
@@ -337,50 +388,57 @@ async function logoutUser() {
 }
 
 // 设置认证状态监听
-function setupAuthStateListener() {
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        console.log('认证状态变化:', event, session?.user?.id);
+async function setupAuthStateListener() {
+    try {
+        const supabase = await ensureAuthInitialized();
         
-        switch (event) {
-            case 'SIGNED_IN':
-                if (session) {
-                    await handleUserSession(session.user);
-                    showNotification('登录成功！', 'success');
-                }
-                break;
-                
-            case 'SIGNED_OUT':
-                currentUser = null;
-                currentProfile = null;
-                setAuthState(null, null);
-                showNotification('已退出登录', 'info');
-                break;
-                
-            case 'USER_UPDATED':
-                if (session) {
-                    currentUser = session.user;
-                    setAuthState(currentUser, currentProfile);
-                }
-                break;
-                
-            case 'TOKEN_REFRESHED':
-                console.log('令牌已刷新');
-                break;
-                
-            case 'PASSWORD_RECOVERY':
-                console.log('密码恢复流程');
-                break;
-        }
-    });
+        supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('认证状态变化:', event, session?.user?.id);
+            
+            switch (event) {
+                case 'SIGNED_IN':
+                    if (session) {
+                        await handleUserSession(session.user);
+                        showNotification('登录成功！', 'success');
+                    }
+                    break;
+                    
+                case 'SIGNED_OUT':
+                    currentUser = null;
+                    currentProfile = null;
+                    setAuthState(null, null);
+                    showNotification('已退出登录', 'info');
+                    break;
+                    
+                case 'USER_UPDATED':
+                    if (session) {
+                        currentUser = session.user;
+                        setAuthState(currentUser, currentProfile);
+                    }
+                    break;
+                    
+                case 'TOKEN_REFRESHED':
+                    console.log('令牌已刷新');
+                    break;
+                    
+                case 'PASSWORD_RECOVERY':
+                    console.log('密码恢复流程');
+                    break;
+            }
+        });
+    } catch (error) {
+        console.error('设置认证状态监听错误:', error);
+    }
 }
 
 // 设置令牌自动刷新
-function setupTokenRefresh() {
+async function setupTokenRefresh() {
     // 每5分钟检查一次令牌
     setInterval(async () => {
         if (currentUser) {
             try {
-                const { data: { session }, error } = await supabaseClient.auth.getSession();
+                const supabase = await ensureAuthInitialized();
+                const { data: { session }, error } = await supabase.auth.getSession();
                 
                 if (error) {
                     console.error('刷新令牌检查错误:', error);
@@ -392,7 +450,7 @@ function setupTokenRefresh() {
                     
                     if (timeLeft < 5 * 60 * 1000) {
                         console.log('令牌即将过期，正在刷新...');
-                        await supabaseClient.auth.refreshSession();
+                        await supabase.auth.refreshSession();
                     }
                 }
             } catch (error) {
@@ -516,9 +574,11 @@ async function updateUserProfile(updates) {
     }
     
     try {
+        const supabase = await ensureAuthInitialized();
+        
         // 如果更新用户名，检查是否重复
         if (updates.username) {
-            const { data: existingUser } = await supabaseClient
+            const { data: existingUser } = await supabase
                 .from('profiles')
                 .select('username')
                 .eq('username', updates.username)
@@ -530,7 +590,7 @@ async function updateUserProfile(updates) {
             }
         }
         
-        const { data, error } = await supabaseClient
+        const { data, error } = await supabase
             .from('profiles')
             .update({
                 ...updates,
@@ -575,11 +635,13 @@ async function updateUserAvatar(avatarUrl) {
 // 发送密码重置邮件
 async function resetPassword(email) {
     try {
+        const supabase = await ensureAuthInitialized();
+        
         if (!email || !isValidEmail(email)) {
             throw new Error('请输入有效的邮箱地址');
         }
         
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
             redirectTo: `${window.location.origin}/reset-password`
         });
         
@@ -598,11 +660,13 @@ async function resetPassword(email) {
 // 更新密码
 async function updatePassword(newPassword) {
     try {
+        const supabase = await ensureAuthInitialized();
+        
         if (!newPassword || newPassword.length < 6) {
             throw new Error('密码至少需要6个字符');
         }
         
-        const { error } = await supabaseClient.auth.updateUser({
+        const { error } = await supabase.auth.updateUser({
             password: newPassword
         });
         
@@ -641,6 +705,46 @@ function showNotification(message, type = 'info') {
     }
 }
 
+// 简化版认证函数（用于HTML按钮直接调用）
+async function handleSignUp() {
+    const email = document.getElementById('email')?.value;
+    const password = document.getElementById('password')?.value;
+    const username = document.getElementById('username')?.value || email?.split('@')[0];
+    
+    if (!email || !password) {
+        alert('请输入邮箱和密码');
+        return;
+    }
+    
+    try {
+        const result = await registerUser({ username, email, password });
+        alert(result.message || '注册成功！');
+    } catch (error) {
+        alert('注册失败: ' + error.message);
+    }
+}
+
+async function handleSignIn() {
+    const identifier = document.getElementById('identifier')?.value;
+    const password = document.getElementById('password')?.value;
+    
+    if (!identifier || !password) {
+        alert('请输入用户名/邮箱和密码');
+        return;
+    }
+    
+    try {
+        const result = await loginUser({ identifier, password });
+        alert('登录成功！');
+        // 刷新页面或跳转
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    } catch (error) {
+        alert('登录失败: ' + error.message);
+    }
+}
+
 // 导出函数
 window.auth = {
     // 初始化
@@ -671,15 +775,29 @@ window.auth = {
     updatePassword,
     
     // 工具函数
-    isValidEmail
+    isValidEmail,
+    
+    // 简化版函数（用于HTML直接调用）
+    handleSignUp,
+    handleSignIn,
+    
+    // 确保初始化
+    ensureInitialized: ensureAuthInitialized
 };
 
 // 自动初始化
 document.addEventListener('DOMContentLoaded', () => {
-    // 延迟初始化，确保其他模块先加载
-    setTimeout(() => {
-        initAuthSystem();
+    console.log('DOM 加载完成，开始初始化认证系统');
+    
+    // 延迟初始化，确保 Supabase 先初始化
+    setTimeout(async () => {
+        try {
+            await initAuthSystem();
+            console.log('✅ 认证系统自动初始化完成');
+        } catch (error) {
+            console.error('❌ 认证系统自动初始化失败:', error);
+        }
     }, 1000);
 });
 
-console.log('认证模块完整加载完成');
+console.log('✅ 认证模块完整加载完成');

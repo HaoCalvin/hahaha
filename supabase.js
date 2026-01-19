@@ -1,36 +1,83 @@
 /**
- * Supabase配置和初始化
+ * Supabase配置和初始化 - 模块化版本
  * 这个文件处理与Supabase后端的连接和数据库操作
  */
+
+// 动态加载 Supabase SDK
+async function loadSupabase() {
+    // 如果已经加载，直接返回
+    if (window.supabase) {
+        console.log('Supabase SDK 已加载');
+        return window.supabase;
+    }
+    
+    console.log('正在加载 Supabase SDK...');
+    
+    // 动态创建 script 标签加载 Supabase SDK
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/@supabase/supabase-js@2';
+        script.onload = () => {
+            if (typeof supabase === 'undefined') {
+                reject(new Error('Supabase SDK 加载失败'));
+                return;
+            }
+            console.log('Supabase SDK 加载成功');
+            window.supabase = supabase;
+            resolve(supabase);
+        };
+        script.onerror = (error) => {
+            console.error('加载 Supabase SDK 失败:', error);
+            reject(new Error('Supabase SDK 加载失败'));
+        };
+        document.head.appendChild(script);
+    });
+}
 
 // Supabase配置
 const SUPABASE_URL = 'https://szrybhleozpzfwhaoiha.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU';
 
-// 初始化Supabase客户端
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true
-    },
-    db: {
-        schema: 'public'
-    },
-    realtime: {
-        params: {
-            eventsPerSecond: 10
-        }
-    },
-    global: {
-        headers: {
-            'apikey': SUPABASE_ANON_KEY
-        }
+// 主初始化函数
+async function initializeSupabase() {
+    try {
+        console.log('正在初始化 Supabase...');
+        
+        // 加载 Supabase SDK
+        await loadSupabase();
+        
+        // 创建客户端
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                autoRefreshToken: true,
+                persistSession: true,
+                detectSessionInUrl: true
+            },
+            db: {
+                schema: 'public'
+            },
+            realtime: {
+                params: {
+                    eventsPerSecond: 10
+                }
+            },
+            global: {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY
+                }
+            }
+        });
+        
+        // 存储到全局
+        window.supabaseClient = client;
+        
+        console.log('✅ Supabase 客户端创建成功');
+        return client;
+    } catch (error) {
+        console.error('❌ Supabase 初始化失败:', error);
+        throw error;
     }
-});
-
-// 导出supabase实例
-window.supabaseClient = supabase;
+}
 
 // 数据库表名常量
 const TABLES = {
@@ -41,9 +88,20 @@ const TABLES = {
     FOLLOWS: 'follows'
 };
 
+// 等待 Supabase 初始化的函数
+async function ensureSupabaseInitialized() {
+    if (window.supabaseClient) {
+        return window.supabaseClient;
+    }
+    
+    console.log('Supabase 客户端未初始化，正在初始化...');
+    return await initializeSupabase();
+}
+
 // 初始化数据库表（第一次运行时调用）
 async function initializeDatabase() {
     try {
+        const supabase = await ensureSupabaseInitialized();
         console.log('正在初始化数据库...');
         
         // 创建profiles表（如果不存在）
@@ -64,143 +122,172 @@ async function initializeDatabase() {
         console.log('数据库初始化完成');
     } catch (error) {
         console.error('数据库初始化错误:', error);
-        // 如果表已经存在，这个错误可以忽略
     }
 }
 
 // 创建profiles表
 async function createProfilesTable() {
-    const { error } = await supabase
-        .from(TABLES.PROFILES)
-        .select('*')
-        .limit(1);
-    
-    if (error && error.code === 'PGRST116') {
-        console.log('profiles表不存在，将在首次使用时自动创建');
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { error } = await supabase
+            .from(TABLES.PROFILES)
+            .select('*')
+            .limit(1);
+        
+        if (error && error.code === 'PGRST116') {
+            console.log('profiles表不存在，将在首次使用时自动创建');
+        }
+    } catch (error) {
+        console.error('检查profiles表错误:', error);
     }
 }
 
 // 创建photos表
 async function createPhotosTable() {
-    const { error } = await supabase
-        .from(TABLES.PHOTOS)
-        .select('*')
-        .limit(1);
-    
-    if (error && error.code === 'PGRST116') {
-        console.log('photos表不存在，将在首次使用时自动创建');
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { error } = await supabase
+            .from(TABLES.PHOTOS)
+            .select('*')
+            .limit(1);
+        
+        if (error && error.code === 'PGRST116') {
+            console.log('photos表不存在，将在首次使用时自动创建');
+        }
+    } catch (error) {
+        console.error('检查photos表错误:', error);
     }
 }
 
 // 创建likes表
 async function createLikesTable() {
-    const { error } = await supabase
-        .from(TABLES.LIKES)
-        .select('*')
-        .limit(1);
-    
-    if (error && error.code === 'PGRST116') {
-        console.log('likes表不存在，将在首次使用时自动创建');
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { error } = await supabase
+            .from(TABLES.LIKES)
+            .select('*')
+            .limit(1);
+        
+        if (error && error.code === 'PGRST116') {
+            console.log('likes表不存在，将在首次使用时自动创建');
+        }
+    } catch (error) {
+        console.error('检查likes表错误:', error);
     }
 }
 
 // 创建comments表
 async function createCommentsTable() {
-    const { error } = await supabase
-        .from(TABLES.COMMENTS)
-        .select('*')
-        .limit(1);
-    
-    if (error && error.code === 'PGRST116') {
-        console.log('comments表不存在，将在首次使用时自动创建');
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { error } = await supabase
+            .from(TABLES.COMMENTS)
+            .select('*')
+            .limit(1);
+        
+        if (error && error.code === 'PGRST116') {
+            console.log('comments表不存在，将在首次使用时自动创建');
+        }
+    } catch (error) {
+        console.error('检查comments表错误:', error);
     }
 }
 
 // 创建follows表
 async function createFollowsTable() {
-    const { error } = await supabase
-        .from(TABLES.FOLLOWS)
-        .select('*')
-        .limit(1);
-    
-    if (error && error.code === 'PGRST116') {
-        console.log('follows表不存在，将在首次使用时自动创建');
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        const { error } = await supabase
+            .from(TABLES.FOLLOWS)
+            .select('*')
+            .limit(1);
+        
+        if (error && error.code === 'PGRST116') {
+            console.log('follows表不存在，将在首次使用时自动创建');
+        }
+    } catch (error) {
+        console.error('检查follows表错误:', error);
     }
 }
 
 // 监听实时更新
-function setupRealtimeListeners() {
-    console.log('正在设置实时监听...');
-    
-    // 监听照片表的插入和删除
-    const photosChannel = supabase
-        .channel('photos-changes')
-        .on(
-            'postgres_changes',
-            {
-                event: '*',
-                schema: 'public',
-                table: TABLES.PHOTOS
-            },
-            (payload) => {
-                console.log('照片表变化:', payload);
-                handlePhotosChange(payload);
-            }
-        )
-        .subscribe();
-    
-    // 监听点赞表的插入和删除
-    const likesChannel = supabase
-        .channel('likes-changes')
-        .on(
-            'postgres_changes',
-            {
-                event: '*',
-                schema: 'public',
-                table: TABLES.LIKES
-            },
-            (payload) => {
-                console.log('点赞表变化:', payload);
-                handleLikesChange(payload);
-            }
-        )
-        .subscribe();
-    
-    // 监听评论表的插入
-    const commentsChannel = supabase
-        .channel('comments-changes')
-        .on(
-            'postgres_changes',
-            {
-                event: 'INSERT',
-                schema: 'public',
-                table: TABLES.COMMENTS
-            },
-            (payload) => {
-                console.log('评论表变化:', payload);
-                handleCommentsChange(payload);
-            }
-        )
-        .subscribe();
-    
-    // 监听关注表的插入和删除
-    const followsChannel = supabase
-        .channel('follows-changes')
-        .on(
-            'postgres_changes',
-            {
-                event: '*',
-                schema: 'public',
-                table: TABLES.FOLLOWS
-            },
-            (payload) => {
-                console.log('关注表变化:', payload);
-                handleFollowsChange(payload);
-            }
-        )
-        .subscribe();
-    
-    console.log('实时监听已设置');
+async function setupRealtimeListeners() {
+    try {
+        const supabase = await ensureSupabaseInitialized();
+        console.log('正在设置实时监听...');
+        
+        // 监听照片表的插入和删除
+        const photosChannel = supabase
+            .channel('photos-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: TABLES.PHOTOS
+                },
+                (payload) => {
+                    console.log('照片表变化:', payload);
+                    handlePhotosChange(payload);
+                }
+            )
+            .subscribe();
+        
+        // 监听点赞表的插入和删除
+        const likesChannel = supabase
+            .channel('likes-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: TABLES.LIKES
+                },
+                (payload) => {
+                    console.log('点赞表变化:', payload);
+                    handleLikesChange(payload);
+                }
+            )
+            .subscribe();
+        
+        // 监听评论表的插入
+        const commentsChannel = supabase
+            .channel('comments-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: TABLES.COMMENTS
+                },
+                (payload) => {
+                    console.log('评论表变化:', payload);
+                    handleCommentsChange(payload);
+                }
+            )
+            .subscribe();
+        
+        // 监听关注表的插入和删除
+        const followsChannel = supabase
+            .channel('follows-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: TABLES.FOLLOWS
+                },
+                (payload) => {
+                    console.log('关注表变化:', payload);
+                    handleFollowsChange(payload);
+                }
+            )
+            .subscribe();
+        
+        console.log('实时监听已设置');
+    } catch (error) {
+        console.error('设置实时监听错误:', error);
+    }
 }
 
 // 处理照片表变化
@@ -274,13 +361,11 @@ function handleLikesChange(payload) {
 // 处理新点赞
 function handleNewLike(like) {
     console.log('新点赞:', like);
-    // 这里可以添加实时更新UI的逻辑
 }
 
 // 处理删除点赞
 function handleDeletedLike(like) {
     console.log('删除点赞:', like);
-    // 这里可以添加实时更新UI的逻辑
 }
 
 // 处理评论变化
@@ -292,23 +377,17 @@ function handleCommentsChange(payload) {
 // 处理新评论
 function handleNewComment(comment) {
     console.log('新评论:', comment);
-    
-    // 如果在图片详情页且是当前图片，添加评论
-    const imageDetailModal = document.getElementById('imageDetailModal');
-    if (imageDetailModal && imageDetailModal.style.display === 'flex') {
-        // 可以添加逻辑检查是否为当前图片的评论
-    }
 }
 
 // 处理关注变化
 function handleFollowsChange(payload) {
     console.log('关注变化:', payload);
-    // 这里可以添加实时更新关注状态的逻辑
 }
 
 // 用户相关函数
 async function getUserProfile(userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.PROFILES)
             .select('*')
@@ -325,6 +404,7 @@ async function getUserProfile(userId) {
 
 async function updateUserProfile(userId, updates) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.PROFILES)
             .update(updates)
@@ -343,6 +423,7 @@ async function updateUserProfile(userId, updates) {
 // 照片相关函数
 async function getPhotos(page = 0, limit = 12, sortBy = 'newest', userId = null) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         let query = supabase
             .from(TABLES.PHOTOS)
             .select(`
@@ -389,6 +470,7 @@ async function getPhotos(page = 0, limit = 12, sortBy = 'newest', userId = null)
 
 async function searchPhotos(keyword, page = 0, limit = 12) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.PHOTOS)
             .select(`
@@ -413,6 +495,7 @@ async function searchPhotos(keyword, page = 0, limit = 12) {
 
 async function getPhotoById(photoId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.PHOTOS)
             .select(`
@@ -436,6 +519,7 @@ async function getPhotoById(photoId) {
 
 async function createPhoto(photoData) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.PHOTOS)
             .insert([photoData])
@@ -452,6 +536,8 @@ async function createPhoto(photoData) {
 
 async function deletePhoto(photoId, userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
+        
         // 首先检查用户是否有权限删除
         const { data: photo } = await supabase
             .from(TABLES.PHOTOS)
@@ -494,6 +580,8 @@ async function deletePhoto(photoId, userId) {
 // 点赞相关函数
 async function toggleLike(photoId, userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
+        
         // 检查是否已经点赞
         const { data: existingLike } = await supabase
             .from(TABLES.LIKES)
@@ -535,6 +623,7 @@ async function toggleLike(photoId, userId) {
 
 async function getUserLikes(userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.LIKES)
             .select(`
@@ -554,6 +643,7 @@ async function getUserLikes(userId) {
 // 评论相关函数
 async function getComments(photoId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.COMMENTS)
             .select(`
@@ -577,6 +667,7 @@ async function getComments(photoId) {
 
 async function addComment(photoId, userId, content) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.COMMENTS)
             .insert([{
@@ -609,6 +700,8 @@ async function addComment(photoId, userId, content) {
 // 关注相关函数
 async function toggleFollow(followerId, followingId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
+        
         if (followerId === followingId) {
             throw new Error('不能关注自己');
         }
@@ -648,6 +741,7 @@ async function toggleFollow(followerId, followingId) {
 
 async function getFollowers(userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.FOLLOWS)
             .select(`
@@ -670,6 +764,7 @@ async function getFollowers(userId) {
 
 async function getFollowing(userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.FOLLOWS)
             .select(`
@@ -692,6 +787,7 @@ async function getFollowing(userId) {
 
 async function checkIfFollowing(followerId, followingId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
         const { data, error } = await supabase
             .from(TABLES.FOLLOWS)
             .select('*')
@@ -710,6 +806,8 @@ async function checkIfFollowing(followerId, followingId) {
 // 统计数据函数
 async function getUserStats(userId) {
     try {
+        const supabase = await ensureSupabaseInitialized();
+        
         // 获取照片数量
         const { count: photosCount } = await supabase
             .from(TABLES.PHOTOS)
@@ -744,18 +842,35 @@ async function getUserStats(userId) {
 }
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
-    // 初始化数据库
-    initializeDatabase();
+async function initSupabase() {
+    console.log('开始初始化 Supabase 系统...');
     
-    // 设置实时监听（稍后启动，等待认证完成）
-    setTimeout(() => {
-        setupRealtimeListeners();
-    }, 2000);
-});
+    try {
+        // 初始化客户端
+        await initializeSupabase();
+        
+        // 初始化数据库
+        await initializeDatabase();
+        
+        // 设置实时监听（稍后启动，等待认证完成）
+        setTimeout(async () => {
+            await setupRealtimeListeners();
+        }, 2000);
+        
+        console.log('✅ Supabase 系统初始化完成');
+        return window.supabaseClient;
+    } catch (error) {
+        console.error('❌ Supabase 系统初始化失败:', error);
+        throw error;
+    }
+}
 
-// 导出所有函数
+// 导出所有函数到全局
 window.supabaseFunctions = {
+    // 初始化
+    init: initSupabase,
+    ensureInitialized: ensureSupabaseInitialized,
+    
     // 用户函数
     getUserProfile,
     updateUserProfile,
@@ -785,7 +900,25 @@ window.supabaseFunctions = {
     getUserStats,
     
     // 表名常量
-    TABLES
+    TABLES,
+    
+    // 实时监听
+    setupRealtimeListeners
 };
+
+// 自动初始化
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM 加载完成，开始初始化 Supabase');
+    
+    // 延迟初始化，确保页面完全加载
+    setTimeout(async () => {
+        try {
+            await initSupabase();
+            console.log('✅ Supabase 自动初始化完成');
+        } catch (error) {
+            console.error('❌ Supabase 自动初始化失败:', error);
+        }
+    }, 500);
+});
 
 console.log('Supabase模块已加载');
