@@ -63,8 +63,9 @@ async function uploadImageToCloudinary(file, onProgressCallback = null) {
         formData.append('cloud_name', CLOUDINARY_CLOUD_NAME);
         formData.append('api_key', CLOUDINARY_API_KEY);
         
-        // 添加优化参数
-        formData.append('transformation', 'f_auto,q_auto:good'); // 自动格式和良好质量
+        // 注意：非签名上传不允许使用transformation参数
+        // 可以在Cloudinary控制台的上传预设中配置默认转换
+        // 或者在上传后通过URL转换（generateImageUrl等函数已实现）
         formData.append('folder', 'photo-share'); // 组织图片到文件夹
         
         // 创建XMLHttpRequest以支持进度跟踪
