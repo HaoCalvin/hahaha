@@ -88,7 +88,45 @@ function initUploadModule() {
         keywordsInput.addEventListener('input', validateKeywords);
     }
     
+    // 设置图片错误处理
+    setupImageErrorHandling();
+    
     console.log('✅ 上传模块初始化完成');
+}
+
+// 监听图片加载错误
+function setupImageErrorHandling() {
+    document.addEventListener('error', function(e) {
+        if (e.target.tagName === 'IMG') {
+            const img = e.target;
+            const originalSrc = img.src;
+            
+            // 如果是预览图片，不处理
+            if (img.id === 'imagePreview' || img.classList.contains('preview-image')) {
+                return;
+            }
+            
+            console.warn('图片加载失败:', originalSrc);
+            
+            // 尝试修复URL
+            const fixedUrl = window.cloudinary.fixImageUrl(originalSrc);
+            if (fixedUrl !== originalSrc) {
+                console.log('尝试使用修复后的URL:', fixedUrl);
+                img.src = fixedUrl;
+                
+                // 添加加载超时处理
+                setTimeout(() => {
+                    if (!img.complete || img.naturalWidth === 0) {
+                        console.warn('修复后的URL也加载失败');
+                        // 显示替代图片
+                        img.src = 'https://via.placeholder.com/300x200?text=图片加载失败';
+                        img.alt = '图片加载失败';
+                        img.style.opacity = '0.7';
+                    }
+                }, 3000);
+            }
+        }
+    }, true);
 }
 
 // 验证关键词输入
@@ -318,6 +356,11 @@ async function startUpload(keywords, description) {
         
         console.log('✅ Cloudinary上传成功:', cloudinaryResponse);
         
+        // 检查上传的图片URL
+        console.log('检查上传的图片URL...');
+        const urlCheck = await window.cloudinary.checkUploadedImage(cloudinaryResponse);
+        console.log('URL检查结果:', urlCheck);
+        
         // 更新进度
         updateUploadProgress(85, '正在保存到数据库...');
         
@@ -393,15 +436,53 @@ async function savePhotoToDatabase(cloudinaryResponse, keywords, description) {
             throw new Error('用户未登录或登录状态无效');
         }
         
-        // 生成缩略图URL
+        // 调试：检查Cloudinary响应
+        console.log('Cloudinary响应详情:', cloudinaryResponse);
+        console.log('public_id:', cloudinaryResponse.public_id);
+        console.log('secure_url:', cloudinaryResponse.secure_url);
+        
+        // 测试生成的URL
         const thumbnailUrl = window.cloudinary.generateThumbnailUrl(cloudinaryResponse.public_id);
         const optimizedUrl = window.cloudinary.generateOptimizedUrl(cloudinaryResponse.public_id);
+        const originalUrl = window.cloudinary.getOriginalImageUrl(cloudinaryResponse.public_id);
+        
+        console.log('生成的缩略图URL:', thumbnailUrl);
+        console.log('生成的优化URL:', optimizedUrl);
+        console.log('原始URL:', originalUrl);
+        
+        // 测试URL是否可访问
+        let finalThumbnailUrl = thumbnailUrl;
+        let finalImageUrl = optimizedUrl;
+        
+        try {
+            const thumbnailCheck = await window.cloudinary.testImageUrl(thumbnailUrl);
+            console.log('缩略图URL测试:', thumbnailCheck);
+            
+            const optimizedCheck = await window.cloudinary.testImageUrl(optimizedUrl);
+            console.log('优化URL测试:', optimizedCheck);
+            
+            // 如果生成的URL有问题，使用Cloudinary的原始URL
+            if (!thumbnailCheck.success) {
+                console.warn('缩略图URL有问题，使用原始URL');
+                finalThumbnailUrl = originalUrl;
+            }
+            
+            if (!optimizedCheck.success) {
+                console.warn('优化URL有问题，使用原始URL');
+                finalImageUrl = originalUrl;
+            }
+        } catch (testError) {
+            console.error('URL测试失败:', testError);
+            // 测试失败，使用原始URL
+            finalThumbnailUrl = originalUrl;
+            finalImageUrl = originalUrl;
+        }
         
         // 准备照片数据
         const photoData = {
-            user_id: currentUser.id,  // 使用 Supabase auth 的 user.id
-            image_url: optimizedUrl,
-            thumbnail_url: thumbnailUrl,
+            user_id: currentUser.id,
+            image_url: finalImageUrl,
+            thumbnail_url: finalThumbnailUrl,
             cloudinary_id: cloudinaryResponse.public_id,
             title: description ? description.substring(0, 100) : null,
             description: description || null,
@@ -662,6 +743,106 @@ async function checkUploadAvailability() {
     }
 }
 
+// 紧急修复：图片查看功能
+window.fixPhotoView = async function(photoId) {
+    try {
+        const photo = await window.supabaseFunctions.getPhotoById(photoId);
+        if (!photo) {
+            console.error('照片不存在');
+            return;
+        }
+        
+        console.log('照片详情:', photo);
+        
+        // 直接使用Cloudinary原始URL
+        const directUrl = window.cloudinary.getOriginalImageUrl(photo.cloudinary_id);
+        
+        // 创建图片查看模态框
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            cursor: pointer;
+        `;
+        
+        const imgContainer = document.createElement('div');
+        imgContainer.style.cssText = `
+            max-width: 90%;
+            max-height: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        `;
+        
+        const img = document.createElement('img');
+        img.src = directUrl;
+        img.style.cssText = `
+            max-width: 100%;
+            max-height: 80vh;
+            object-fit: contain;
+            border-radius: 8px;
+        `;
+        img.onerror = function() {
+            console.error('直接URL也加载失败:', directUrl);
+            img.src = 'https://via.placeholder.com/800x600?text=图片加载失败';
+        };
+        
+        const info = document.createElement('div');
+        info.style.cssText = `
+            color: white;
+            margin-top: 20px;
+            text-align: center;
+            max-width: 600px;
+        `;
+        
+        if (photo.title) {
+            const title = document.createElement('h3');
+            title.textContent = photo.title;
+            title.style.margin = '0 0 10px 0';
+            info.appendChild(title);
+        }
+        
+        if (photo.description) {
+            const desc = document.createElement('p');
+            desc.textContent = photo.description;
+            desc.style.margin = '0 0 10px 0';
+            desc.style.opacity = '0.8';
+            info.appendChild(desc);
+        }
+        
+        if (photo.keywords && photo.keywords.length > 0) {
+            const keywords = document.createElement('p');
+            keywords.textContent = `关键词: ${photo.keywords.join(', ')}`;
+            keywords.style.margin = '0';
+            keywords.style.opacity = '0.6';
+            keywords.style.fontSize = '14px';
+            info.appendChild(keywords);
+        }
+        
+        // 点击关闭
+        modal.onclick = function() {
+            document.body.removeChild(modal);
+        };
+        
+        imgContainer.appendChild(img);
+        imgContainer.appendChild(info);
+        modal.appendChild(imgContainer);
+        document.body.appendChild(modal);
+        
+    } catch (error) {
+        console.error('查看照片错误:', error);
+        alert('查看照片失败: ' + error.message);
+    }
+};
+
 // 导出函数
 window.upload = {
     init: initUploadModule,
@@ -670,7 +851,8 @@ window.upload = {
     getState: getUploadState,
     handleFileSelect,
     removeSelectedImage,
-    checkAvailability: checkUploadAvailability
+    checkAvailability: checkUploadAvailability,
+    fixPhotoView: window.fixPhotoView
 };
 
 // 自动初始化

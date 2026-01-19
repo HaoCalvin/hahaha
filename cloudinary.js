@@ -60,12 +60,10 @@ async function uploadImageToCloudinary(file, onProgressCallback = null) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-        formData.append('cloud_name', CLOUDINARY_CLOUD_NAME);
-        formData.append('api_key', CLOUDINARY_API_KEY);
         
-        // 注意：非签名上传不允许使用transformation参数
-        // 可以在Cloudinary控制台的上传预设中配置默认转换
-        // 或者在上传后通过URL转换（generateImageUrl等函数已实现）
+        // 注意：非签名上传只允许特定参数
+        // 不允许：transformation, cloud_name, api_key
+        // 允许：folder, tags, context 等
         formData.append('folder', 'photo-share'); // 组织图片到文件夹
         
         // 创建XMLHttpRequest以支持进度跟踪
@@ -147,7 +145,6 @@ async function deleteImageFromCloudinary(publicId) {
         formData.append('signature', signature);
         formData.append('api_key', CLOUDINARY_API_KEY);
         formData.append('timestamp', timestamp);
-        formData.append('cloud_name', CLOUDINARY_CLOUD_NAME);
         
         // 发送删除请求
         const response = await fetch(CLOUDINARY_DELETE_URL, {
@@ -213,7 +210,7 @@ function generateImageUrl(publicId, options = {}) {
         width = 800,
         height,
         crop = 'fill',
-        quality = 'auto',
+        quality = 'auto:good',
         format = 'auto'
     } = options;
     
@@ -226,17 +223,19 @@ function generateImageUrl(publicId, options = {}) {
     if (height) transformations.push(`h_${height}`);
     
     // 添加裁剪模式
-    transformations.push(`c_${crop}`);
+    if (crop) transformations.push(`c_${crop}`);
     
     // 添加质量
-    transformations.push(`q_${quality}`);
+    if (quality) transformations.push(`q_${quality}`);
     
     // 添加格式
-    transformations.push(`f_${format}`);
+    if (format) transformations.push(`f_${format}`);
     
-    const transformationString = transformations.join(',');
+    const transformationString = transformations.length > 0 
+        ? transformations.join(',') + '/' 
+        : '';
     
-    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transformationString}/${publicId}`;
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transformationString}${publicId}`;
 }
 
 // 生成缩略图URL
@@ -245,7 +244,7 @@ function generateThumbnailUrl(publicId, width = 300, height = 200) {
         width,
         height,
         crop: 'fill',
-        quality: 'good',
+        quality: 'auto:good',
         format: 'auto'
     });
 }
@@ -254,8 +253,8 @@ function generateThumbnailUrl(publicId, width = 300, height = 200) {
 function generateOptimizedUrl(publicId, width = 1200) {
     return generateImageUrl(publicId, {
         width,
-        crop: 'limit', // 限制大小，保持宽高比
-        quality: 'best',
+        crop: 'limit',
+        quality: 'auto:best',
         format: 'auto'
     });
 }
@@ -272,7 +271,7 @@ function generateAvatarUrl(publicId, size = 100) {
         height: size,
         crop: 'fill',
         gravity: 'face', // 人脸识别（如果可用）
-        quality: 'good',
+        quality: 'auto:good',
         format: 'auto'
     });
 }
@@ -297,6 +296,34 @@ function batchGenerateImageUrls(images, type = 'thumbnail') {
                 return generateThumbnailUrl(image.cloudinary_id);
         }
     }).filter(url => url !== null);
+}
+
+// 测试图片URL是否可访问
+async function testImageUrl(url) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ success: true, url });
+        img.onerror = () => resolve({ success: false, url });
+        img.src = url;
+    });
+}
+
+// 检查上传的图片
+async function checkUploadedImage(cloudinaryResponse) {
+    const urls = {
+        original: cloudinaryResponse.secure_url,
+        thumbnail: generateThumbnailUrl(cloudinaryResponse.public_id),
+        optimized: generateOptimizedUrl(cloudinaryResponse.public_id)
+    };
+    
+    const results = {};
+    
+    for (const [name, url] of Object.entries(urls)) {
+        results[name] = await testImageUrl(url);
+    }
+    
+    console.log('图片URL检查结果:', results);
+    return results;
 }
 
 // 预加载图片
@@ -491,6 +518,41 @@ function createImagePreview(file, maxSize = 300) {
     });
 }
 
+// 修复图片URL（如果加载失败）
+function fixImageUrl(url) {
+    if (!url) return '';
+    
+    // 如果是Cloudinary URL但有问题，尝试修复
+    if (url.includes('cloudinary.com')) {
+        // 确保URL格式正确
+        if (!url.includes('/upload/')) {
+            // 插入upload路径
+            const parts = url.split('cloudinary.com/');
+            if (parts.length === 2) {
+                return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${parts[1]}`;
+            }
+        }
+        
+        // 如果URL包含转换但加载失败，尝试使用原始版本
+        if (url.includes('/upload/w_') || url.includes('/upload/c_')) {
+            // 提取public_id
+            const match = url.match(/upload\/(?:[^\/]+\/)?(.+)$/);
+            if (match && match[1]) {
+                const publicId = match[1];
+                return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${publicId}`;
+            }
+        }
+    }
+    
+    return url;
+}
+
+// 获取原始图片URL（不带转换）
+function getOriginalImageUrl(publicId) {
+    if (!publicId) return '';
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${publicId}`;
+}
+
 // 导出函数
 window.cloudinary = {
     // 配置
@@ -508,15 +570,19 @@ window.cloudinary = {
     generateOptimizedUrl,
     generateAvatarUrl,
     batchGenerateImageUrls,
+    getOriginalImageUrl,
+    fixImageUrl,
     
     // 图片处理
     getImageInfo,
     compressImage,
     createImagePreview,
     
-    // 预加载
+    // 预加载和测试
     preloadImage,
-    preloadImages
+    preloadImages,
+    testImageUrl,
+    checkUploadedImage
 };
 
 console.log('Cloudinary模块完整加载完成');
