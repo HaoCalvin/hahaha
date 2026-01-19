@@ -1,5 +1,5 @@
 /**
- * 用户个人主页管理模块
+ * 用户个人主页管理模块 - 修复版
  * 处理用户资料显示、照片展示、关注管理
  */
 
@@ -26,7 +26,7 @@ function initProfileModule() {
     // 设置个人主页模态框事件
     setupProfileModalEvents();
     
-    console.log('个人主页模块初始化完成');
+    console.log('✅ 个人主页模块初始化完成');
 }
 
 // 设置个人主页事件监听器
@@ -84,30 +84,41 @@ function setupProfileModalEvents() {
         }
     });
     
-    // 标签切换
-    const tabs = modal.querySelectorAll('.profile-tab');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', handleProfileTabClick);
-    });
+    // 标签切换（使用事件委托）
+    const profileTabs = document.getElementById('profileTabs');
+    if (profileTabs) {
+        profileTabs.addEventListener('click', (e) => {
+            if (e.target.classList.contains('profile-tab')) {
+                handleProfileTabClick(e);
+            }
+        });
+    }
 }
 
 // 显示当前用户个人主页
 async function showCurrentUserProfile(defaultTab = 'uploads') {
-    const currentUser = window.auth?.getCurrentUser();
-    const currentProfile = window.auth?.getCurrentProfile();
-    
-    if (!currentUser || !currentProfile) {
-        showNotification('请先登录', 'warning');
-        showAuthModal();
-        return;
+    try {
+        const currentUser = await window.supabaseFunctions.getCurrentUser();
+        const currentProfile = await window.supabaseFunctions.getUserProfile(currentUser?.id);
+        
+        if (!currentUser || !currentProfile) {
+            showNotification('请先登录', 'warning');
+            showAuthModal();
+            return;
+        }
+        
+        await showUserProfile(currentUser.id, defaultTab, true);
+    } catch (error) {
+        console.error('显示当前用户主页错误:', error);
+        showNotification('加载个人主页失败', 'error');
     }
-    
-    await showUserProfile(currentUser.id, defaultTab, true);
 }
 
 // 显示用户个人主页
 async function showUserProfile(userId, defaultTab = 'uploads', isCurrentUser = false) {
     try {
+        console.log(`正在显示用户个人主页: ${userId}, 标签: ${defaultTab}`);
+        
         // 重置状态
         profileState = {
             currentUserId: userId,
@@ -125,22 +136,28 @@ async function showUserProfile(userId, defaultTab = 'uploads', isCurrentUser = f
         showProfileLoading();
         
         // 获取用户资料
+        console.log('正在获取用户资料...');
         const profile = await window.supabaseFunctions.getUserProfile(userId);
         if (!profile) {
             throw new Error('用户不存在');
         }
         
+        console.log('用户资料:', profile);
         profileState.currentProfile = profile;
         
         // 获取用户统计
+        console.log('正在获取用户统计...');
         const stats = await window.supabaseFunctions.getUserStats(userId);
+        console.log('用户统计:', stats);
         
         // 获取关注状态（如果不是当前用户）
         let followStatus = { following: false };
         if (!isCurrentUser) {
-            const currentUser = window.auth?.getCurrentUser();
+            const currentUser = await window.supabaseFunctions.getCurrentUser();
             if (currentUser) {
-                followStatus = await window.supabaseFunctions.getUserFollowStatus(currentUser.id, userId);
+                const isFollowing = await window.supabaseFunctions.checkIfFollowing(currentUser.id, userId);
+                followStatus = { following: isFollowing };
+                console.log('关注状态:', followStatus);
             }
         }
         
@@ -155,11 +172,12 @@ async function showUserProfile(userId, defaultTab = 'uploads', isCurrentUser = f
         if (modal) {
             modal.style.display = 'flex';
             document.body.style.overflow = 'hidden';
+            console.log('✅ 个人主页模态框已显示');
         }
         
     } catch (error) {
         console.error('显示用户个人主页错误:', error);
-        showNotification('加载个人主页失败', 'error');
+        showNotification('加载个人主页失败: ' + error.message, 'error');
         closeProfileModal();
     } finally {
         profileState.isLoading = false;
@@ -190,8 +208,11 @@ function hideProfileLoading() {
 
 // 更新个人主页模态框
 function updateProfileModal(profile, stats, followStatus) {
+    console.log('更新个人主页模态框:', { profile, stats, followStatus });
+    
     const profileAvatar = document.getElementById('profileAvatar');
     const profileUsername = document.getElementById('profileUsername');
+    const profileBio = document.getElementById('profileBio');
     const postCount = document.getElementById('postCount');
     const followerCount = document.getElementById('followerCount');
     const followingCount = document.getElementById('followingCount');
@@ -200,13 +221,23 @@ function updateProfileModal(profile, stats, followStatus) {
     // 更新头像
     if (profileAvatar) {
         profileAvatar.src = profile.avatar_url || 
-                          `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.username)}&background=bb86fc&color=fff`;
-        profileAvatar.alt = profile.username;
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.username || 'User')}&background=bb86fc&color=fff`;
+        profileAvatar.alt = profile.username || '用户';
     }
     
     // 更新用户名
     if (profileUsername) {
         profileUsername.textContent = profile.username || '用户';
+    }
+    
+    // 更新简介
+    if (profileBio) {
+        if (profile.bio) {
+            profileBio.textContent = profile.bio;
+            profileBio.style.display = 'block';
+        } else {
+            profileBio.style.display = 'none';
+        }
     }
     
     // 更新统计
@@ -241,10 +272,9 @@ function updateProfileModal(profile, stats, followStatus) {
             }
             
             // 移除现有事件监听器并添加新的
-            followProfileBtn.replaceWith(followProfileBtn.cloneNode(true));
-            const newFollowBtn = document.getElementById('followProfileBtn');
-            newFollowBtn.addEventListener('click', () => {
-                handleProfileFollow(profile.id, newFollowBtn);
+            followProfileBtn.onclick = null;
+            followProfileBtn.addEventListener('click', () => {
+                handleProfileFollow(profile.id, followProfileBtn);
             });
         }
     }
@@ -275,6 +305,7 @@ function setupStatsClickEvents() {
     // 作品数点击
     const postCount = document.getElementById('postCount');
     if (postCount) {
+        postCount.onclick = null;
         postCount.addEventListener('click', () => {
             switchTab('uploads');
         });
@@ -283,6 +314,7 @@ function setupStatsClickEvents() {
     // 粉丝数点击
     const followerCount = document.getElementById('followerCount');
     if (followerCount) {
+        followerCount.onclick = null;
         followerCount.addEventListener('click', async () => {
             await showFollowersList();
         });
@@ -291,6 +323,7 @@ function setupStatsClickEvents() {
     // 关注数点击
     const followingCount = document.getElementById('followingCount');
     if (followingCount) {
+        followingCount.onclick = null;
         followingCount.addEventListener('click', async () => {
             await showFollowingList();
         });
@@ -308,7 +341,7 @@ function switchTab(tab) {
 
 // 处理标签点击
 function handleProfileTabClick(e) {
-    const tab = e.currentTarget;
+    const tab = e.target;
     const tabType = tab.getAttribute('data-tab');
     
     switchTab(tabType);
@@ -317,6 +350,8 @@ function handleProfileTabClick(e) {
 // 加载个人主页数据
 async function loadProfileData(tab) {
     if (!profileState.currentUserId) return;
+    
+    console.log(`加载个人主页数据，标签: ${tab}, 用户ID: ${profileState.currentUserId}`);
     
     profileState.isLoading = true;
     showProfileLoading();
@@ -345,11 +380,14 @@ async function loadProfileData(tab) {
 // 加载用户照片
 async function loadUserPhotos() {
     try {
+        console.log('正在加载用户照片...');
         const photos = await window.supabaseFunctions.getPhotos(0, 50, 'newest', profileState.currentUserId);
-        profileState.photos = photos;
+        console.log('用户照片:', photos);
+        profileState.photos = photos || [];
         
-        renderProfileGallery(photos, 'uploads');
+        renderProfileGallery(profileState.photos, 'uploads');
     } catch (error) {
+        console.error('加载用户照片错误:', error);
         throw error;
     }
 }
@@ -357,33 +395,54 @@ async function loadUserPhotos() {
 // 加载用户喜欢的照片
 async function loadUserLikedPhotos() {
     try {
-        const currentUser = window.auth?.getCurrentUser();
-        const userId = profileState.isCurrentUser ? currentUser?.id : profileState.currentUserId;
+        console.log('正在加载用户喜欢的照片...');
+        const userId = profileState.currentUserId;
         
         if (!userId) {
             throw new Error('无法获取用户ID');
         }
         
+        // 注意：需要确保supabaseFunctions中有getUserLikes函数
         const likes = await window.supabaseFunctions.getUserLikes(userId);
-        const photoIds = likes.map(like => like.photo_id).filter(id => id);
+        console.log('用户点赞:', likes);
         
         let likedPhotos = [];
-        if (photoIds.length > 0) {
-            likedPhotos = await window.supabaseFunctions.batchGetPhotos(photoIds);
+        if (likes && likes.length > 0) {
+            // 从点赞记录中提取照片信息
+            likedPhotos = likes
+                .map(like => like.photos) // 假设getUserLikes返回的结构中包含photos
+                .filter(photo => photo) // 过滤掉null/undefined
+                .map(photo => ({
+                    ...photo,
+                    // 如果cloudinary_id存在，生成正确的URL
+                    thumbnail_url: photo.cloudinary_id ? 
+                        window.cloudinary?.generateThumbnailUrl(photo.cloudinary_id) || photo.thumbnail_url : 
+                        photo.thumbnail_url,
+                    image_url: photo.cloudinary_id ? 
+                        window.cloudinary?.generateOptimizedUrl(photo.cloudinary_id) || photo.image_url : 
+                        photo.image_url
+                }));
         }
         
         profileState.likedPhotos = likedPhotos;
+        console.log('用户喜欢的照片:', likedPhotos);
         
         renderProfileGallery(likedPhotos, 'likes');
     } catch (error) {
-        throw error;
+        console.error('加载用户喜欢的照片错误:', error);
+        // 如果getUserLikes不存在，显示空状态
+        profileState.likedPhotos = [];
+        renderProfileGallery([], 'likes');
     }
 }
 
 // 渲染个人主页画廊
 function renderProfileGallery(photos, type) {
     const profileGallery = document.getElementById('profileGallery');
-    if (!profileGallery) return;
+    if (!profileGallery) {
+        console.error('找不到profileGallery元素');
+        return;
+    }
     
     if (!photos || photos.length === 0) {
         showProfileEmptyState(type);
@@ -396,6 +455,8 @@ function renderProfileGallery(photos, type) {
         const photoElement = createProfilePhotoElement(photo, index);
         profileGallery.appendChild(photoElement);
     });
+    
+    console.log(`渲染了 ${photos.length} 张照片`);
 }
 
 // 创建个人主页照片元素
@@ -404,12 +465,27 @@ function createProfilePhotoElement(photo, index) {
     div.className = 'profile-photo-item';
     div.style.animationDelay = `${index * 0.05}s`;
     
+    // 确保有有效的图片URL
+    let thumbnailUrl = photo.thumbnail_url || photo.image_url;
+    
+    // 如果有cloudinary_id但URL无效，尝试修复
+    if (photo.cloudinary_id && (!thumbnailUrl || thumbnailUrl.includes('undefined'))) {
+        thumbnailUrl = window.cloudinary?.generateThumbnailUrl(photo.cloudinary_id) || 
+                      window.cloudinary?.getOriginalImageUrl(photo.cloudinary_id);
+    }
+    
+    // 如果还是没有有效的URL，使用占位图
+    if (!thumbnailUrl || thumbnailUrl.includes('undefined')) {
+        thumbnailUrl = 'https://via.placeholder.com/300x200?text=图片加载中';
+    }
+    
     div.innerHTML = `
-        <img src="${photo.thumbnail_url || photo.image_url}" 
+        <img src="${thumbnailUrl}" 
              alt="${photo.title || '照片'}" 
              class="profile-image"
              data-photo-id="${photo.id}"
-             loading="lazy">
+             loading="lazy"
+             onerror="this.src='https://via.placeholder.com/300x200?text=图片加载失败'">
         <div class="photo-overlay">
             <div class="photo-stats">
                 <span><i class="fas fa-heart"></i> ${photo.likes_count || 0}</span>
@@ -470,7 +546,9 @@ function showProfileEmptyState(type) {
     if (uploadBtn) {
         uploadBtn.addEventListener('click', () => {
             closeProfileModal();
-            showUploadModal();
+            if (window.upload && typeof window.upload.showModal === 'function') {
+                window.upload.showModal();
+            }
         });
     }
 }
@@ -500,16 +578,16 @@ function showProfileError(message) {
 
 // 处理个人主页关注
 async function handleProfileFollow(userId, followButton) {
-    const currentUser = window.auth?.getCurrentUser();
-    
-    if (!currentUser) {
-        showNotification('请先登录后再关注', 'warning');
-        closeProfileModal();
-        showAuthModal();
-        return;
-    }
-    
     try {
+        const currentUser = await window.supabaseFunctions.getCurrentUser();
+        
+        if (!currentUser) {
+            showNotification('请先登录后再关注', 'warning');
+            closeProfileModal();
+            showAuthModal();
+            return;
+        }
+        
         const result = await window.supabaseFunctions.toggleFollow(currentUser.id, userId);
         
         if (result.following) {
@@ -552,10 +630,19 @@ async function showFollowersList() {
         const followers = await window.supabaseFunctions.getFollowers(profileState.currentUserId);
         profileState.followers = followers;
         
-        showUserListModal('followers', '粉丝', followers.map(f => f.profiles));
+        // 提取profiles数据
+        const followerUsers = followers.map(f => {
+            if (f.profiles && typeof f.profiles === 'object') {
+                return f.profiles;
+            }
+            // 如果结构不同，尝试其他方式
+            return f;
+        }).filter(user => user);
+        
+        showUserListModal('followers', '粉丝', followerUsers);
     } catch (error) {
         console.error('获取粉丝列表错误:', error);
-        showNotification('加载粉丝列表失败', 'error');
+        showNotification('加载粉丝列表失败: ' + error.message, 'error');
     }
 }
 
@@ -567,10 +654,18 @@ async function showFollowingList() {
         const following = await window.supabaseFunctions.getFollowing(profileState.currentUserId);
         profileState.following = following;
         
-        showUserListModal('following', '关注', following.map(f => f.profiles));
+        // 提取profiles数据
+        const followingUsers = following.map(f => {
+            if (f.profiles && typeof f.profiles === 'object') {
+                return f.profiles;
+            }
+            return f;
+        }).filter(user => user);
+        
+        showUserListModal('following', '关注', followingUsers);
     } catch (error) {
         console.error('获取关注列表错误:', error);
-        showNotification('加载关注列表失败', 'error');
+        showNotification('加载关注列表失败: ' + error.message, 'error');
     }
 }
 
@@ -610,12 +705,13 @@ function showUserListModal(type, title, users) {
     });
     
     // ESC键关闭
-    document.addEventListener('keydown', function escHandler(e) {
+    const escHandler = function(e) {
         if (e.key === 'Escape' && modal.parentNode) {
             modal.remove();
             document.removeEventListener('keydown', escHandler);
         }
-    });
+    };
+    document.addEventListener('keydown', escHandler);
     
     // 添加用户点击事件
     const userItems = modal.querySelectorAll('.user-list-item');
@@ -657,6 +753,8 @@ function closeProfileModal() {
         // 重置状态
         profileState.currentUserId = null;
         profileState.currentProfile = null;
+        
+        console.log('个人主页模态框已关闭');
     }
 }
 
@@ -665,16 +763,17 @@ function cleanupProfileModalListeners() {
     // 清理关注按钮事件
     const followBtn = document.getElementById('followProfileBtn');
     if (followBtn) {
-        const newFollowBtn = followBtn.cloneNode(true);
-        followBtn.parentNode.replaceChild(newFollowBtn, followBtn);
+        followBtn.onclick = null;
     }
     
-    // 清理标签事件
-    const tabs = document.querySelectorAll('.profile-tab');
-    tabs.forEach(tab => {
-        const newTab = tab.cloneNode(true);
-        tab.parentNode.replaceChild(newTab, tab);
-    });
+    // 清理统计点击事件
+    const postCount = document.getElementById('postCount');
+    const followerCount = document.getElementById('followerCount');
+    const followingCount = document.getElementById('followingCount');
+    
+    if (postCount) postCount.onclick = null;
+    if (followerCount) followerCount.onclick = null;
+    if (followingCount) followingCount.onclick = null;
 }
 
 // 显示认证模态框
@@ -685,26 +784,31 @@ function showAuthModal() {
     }
 }
 
-// 显示上传模态框
-function showUploadModal() {
-    if (window.upload && typeof window.upload.showModal === 'function') {
-        window.upload.showModal();
-    }
-}
-
 // 显示图片详情
 function showImageDetail(photoId) {
-    if (window.feed && typeof window.feed.showImageDetail === 'function') {
+    if (window.upload && typeof window.upload.fixPhotoView === 'function') {
+        window.upload.fixPhotoView(photoId);
+    } else if (window.feed && typeof window.feed.showImageDetail === 'function') {
         window.feed.showImageDetail(photoId);
+    } else {
+        console.log('显示图片详情:', photoId);
+        // 使用紧急修复功能
+        if (window.upload && window.upload.fixPhotoView) {
+            window.upload.fixPhotoView(photoId);
+        }
     }
 }
 
 // 显示通知
 function showNotification(message, type = 'info') {
-    if (window.feed && typeof window.feed.showNotification === 'function') {
+    if (window.auth && typeof window.auth.showNotification === 'function') {
+        window.auth.showNotification(message, type);
+    } else if (window.feed && typeof window.feed.showNotification === 'function') {
         window.feed.showNotification(message, type);
     } else {
         console.log(`${type}: ${message}`);
+        // 简单的浏览器通知
+        alert(`${type}: ${message}`);
     }
 }
 
@@ -722,7 +826,10 @@ function refreshProfile() {
 
 // 添加CSS样式
 function addProfileStyles() {
+    if (document.querySelector('#profile-styles')) return;
+    
     const style = document.createElement('style');
+    style.id = 'profile-styles';
     style.textContent = `
         .profile-content {
             max-width: 800px;
@@ -842,11 +949,12 @@ function addProfileStyles() {
             overflow: hidden;
             cursor: pointer;
             animation: fadeIn 0.5s ease;
+            aspect-ratio: 3/2;
         }
         
         .profile-image {
             width: 100%;
-            height: 200px;
+            height: 100%;
             object-fit: cover;
             transition: transform 0.3s ease;
         }
@@ -997,16 +1105,33 @@ window.profile = {
     showCurrentUserProfile,
     closeProfileModal,
     getState: getProfileState,
-    refreshProfile
+    refreshProfile,
+    loadUserPhotos
 };
 
 // 自动初始化
 document.addEventListener('DOMContentLoaded', () => {
-    // 延迟初始化
+    console.log('DOM加载完成，准备初始化个人主页模块');
+    
+    // 延迟初始化，等待其他模块加载
     setTimeout(() => {
-        initProfileModule();
-        addProfileStyles();
-    }, 2500);
+        if (window.supabaseFunctions) {
+            initProfileModule();
+            addProfileStyles();
+            console.log('✅ 个人主页模块初始化完成');
+        } else {
+            console.warn('Supabase模块未加载，个人主页模块初始化延迟');
+            // 如果supabaseFunctions未加载，等待一下再试
+            setTimeout(() => {
+                if (window.supabaseFunctions) {
+                    initProfileModule();
+                    addProfileStyles();
+                } else {
+                    console.error('无法初始化个人主页模块：Supabase模块未加载');
+                }
+            }, 2000);
+        }
+    }, 1000);
 });
 
-console.log('个人主页模块完整加载完成');
+console.log('✅ 个人主页模块完整加载完成');
