@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人主页 - 光影分享</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- 导航栏（与首页相同） -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo">
+                <i class="fas fa-camera"></i>
+                <span>光影分享</span>
+            </a>
+            
+            <div class="nav-links">
+                <a href="index.html"><i class="fas fa-home"></i> 首页</a>
+                <a href="upload.html"><i class="fas fa-cloud-upload-alt"></i> 上传</a>
+                <a href="discussion.html"><i class="fas fa-comments"></i> 讨论区</a>
+                <a href="profile.html" class="active"><i class="fas fa-user"></i> 个人主页</a>
+            </div>
+            
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 移动端菜单 -->
+    <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html"><i class="fas fa-home"></i> 首页</a>
+        <a href="upload.html"><i class="fas fa-cloud-upload-alt"></i> 上传</a>
+        <a href="discussion.html"><i class="fas fa-comments"></i> 讨论区</a>
+        <a href="profile.html" class="active"><i class="fas fa-user"></i> 个人主页</a>
+    </div>
+
+    <main class="container">
+        <!-- 用户信息区域 -->
+        <div class="profile-header" id="profileHeader">
+            <div class="profile-info">
+                <img id="profileAvatar" src="https://ui-avatars.com/api/?name=用户&background=random" 
+                     class="avatar-lg" alt="用户头像">
+                <div class="profile-details">
+                    <h1 id="profileUsername">加载中...</h1>
+                    <p id="profileEmail"></p>
+                    <div class="profile-stats">
+                        <span><i class="fas fa-images"></i> 照片 <span id="photoCount">0</span></span>
+                        <span><i class="fas fa-user-friends"></i> 关注 <span id="followingCount">0</span></span>
+                        <span><i class="fas fa-users"></i> 粉丝 <span id="followerCount">0</span></span>
+                        <span><i class="fas fa-heart"></i> 获赞 <span id="totalLikes">0</span></span>
+                    </div>
+                </div>
+                <div class="profile-actions">
+                    <button class="btn-primary" id="followBtn" style="display: none;" onclick="toggleFollow()">
+                        <i class="fas fa-user-plus"></i> 关注
+                    </button>
+                    <button class="btn-secondary" onclick="openFollowModal()">
+                        <i class="fas fa-search"></i> 发现用户
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户照片 -->
+        <div class="section-header">
+            <h2><i class="fas fa-images"></i> 我的照片</h2>
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="loadUserPhotos('all')">全部</button>
+                <button class="filter-btn" onclick="loadUserPhotos('public')">公开</button>
+                <button class="filter-btn" onclick="loadUserPhotos('private')">私密</button>
+            </div>
+        </div>
+
+        <div class="photos-grid" id="userPhotosGrid">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <!-- 如果没有照片 -->
+        <div id="noPhotosMessage" style="display: none; text-align: center; padding: 3rem;">
+            <i class="fas fa-camera" style="font-size: 4rem; color: var(--light-text); margin-bottom: 1rem;"></i>
+            <h3>还没有照片</h3>
+            <p>分享你的第一张照片吧！</p>
+            <a href="upload.html" class="btn-primary">上传照片</a>
+        </div>
+    </main>
+
+    <!-- 关注用户模态框（与首页相同） -->
+    <div id="followModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>关注用户</h3>
+                <span class="close-modal" onclick="closeFollowModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="searchUserInput" placeholder="搜索用户名..." 
+                       onkeyup="searchUsers(this.value)">
+                <div class="users-list" id="usersList">
+                    <!-- 用户列表会动态加载到这里 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>© 2024 光影分享 - 分享你的美好瞬间</p>
+    </footer>
+
+    <script>
+        // 配置信息
+        const SUPABASE_URL = 'https://szrybhleozpzfwhaoiha.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        let currentUser = null;
+        let profileUser = null;
+        let isOwnProfile = false;
+        let currentUserId = null;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', async function() {
+            await checkAuthStatus();
+            await loadProfile();
+        });
+
+        // 检查登录状态
+        async function checkAuthStatus() {
+            const { data: { session } } = await supabase.auth.getSession();
+            currentUser = session?.user || null;
+        }
+
+        // 加载用户资料
+        async function loadProfile() {
+            // 从URL获取用户ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const userId = urlParams.get('user');
+            
+            if (!userId) {
+                // 没有指定用户，显示当前用户资料
+                if (!currentUser) {
+                    window.location.href = 'auth.html';
+                    return;
+                }
+                currentUserId = currentUser.id;
+                isOwnProfile = true;
+                await loadUserInfo(currentUser);
+            } else {
+                // 显示指定用户资料
+                currentUserId = userId;
+                isOwnProfile = currentUser && currentUser.id === userId;
+                await loadUserInfoById(userId);
+            }
+            
+            // 加载用户照片
+            loadUserPhotos('all');
+            
+            // 加载用户统计数据
+            loadUserStats();
+            
+            // 更新关注按钮
+            updateFollowButton();
+        }
+
+        // 加载当前用户信息
+        async function loadUserInfo(user) {
+            const username = user.user_metadata?.name || user.email.split('@')[0];
+            const avatar = user.user_metadata?.avatar_url || 
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`;
+            
+            document.getElementById('profileUsername').textContent = username;
+            document.getElementById('profileEmail').textContent = user.email;
+            document.getElementById('profileAvatar').src = avatar;
+        }
+
+        // 通过ID加载用户信息
+        async function loadUserInfoById(userId) {
+            try {
+                // 尝试从照片表中获取用户信息
+                const { data: photos } = await supabase
+                    .from('photos')
+                    .select('username, user_avatar')
+                    .eq('user_id', userId)
+                    .limit(1)
+                    .single();
+                
+                if (photos) {
+                    document.getElementById('profileUsername').textContent = photos.username;
+                    document.getElementById('profileAvatar').src = 
+                        photos.user_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(photos.username)}&background=random`;
+                } else {
+                    // 如果没有照片，使用默认信息
+                    document.getElementById('profileUsername').textContent = '用户';
+                }
+                
+                // 隐藏邮箱（保护隐私）
+                document.getElementById('profileEmail').style.display = 'none';
+                
+            } catch (error) {
+                console.error('加载用户信息失败:', error);
+                document.getElementById('profileUsername').textContent = '用户';
+            }
+        }
+
+        // 加载用户统计数据
+        async function loadUserStats() {
+            if (!currentUserId) return;
+            
+            try {
+                // 照片数量
+                const { count: photoCount } = await supabase
+                    .from('photos')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('user_id', currentUserId);
+                
+                // 关注数量
+                const { count: followingCount } = await supabase
+                    .from('follows')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('follower_id', currentUserId);
+                
+                // 粉丝数量
+                const { count: followerCount } = await supabase
+                    .from('follows')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('following_id', currentUserId);
+                
+                // 总获赞数
+                const { data: photos } = await supabase
+                    .from('photos')
+                    .select('likes_count')
+                    .eq('user_id', currentUserId);
+                
+                const totalLikes = photos?.reduce((sum, photo) => sum + (photo.likes_count || 0), 0) || 0;
+                
+                // 更新显示
+                document.getElementById('photoCount').textContent = photoCount || 0;
+                document.getElementById('followingCount').textContent = followingCount || 0;
+                document.getElementById('followerCount').textContent = followerCount || 0;
+                document.getElementById('totalLikes').textContent = totalLikes;
+                
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+
+        // 加载用户照片
+        async function loadUserPhotos(filter = 'all') {
+            if (!currentUserId) return;
+            
+            const photosGrid = document.getElementById('userPhotosGrid');
+            photosGrid.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+            
+            let query = supabase
+                .from('photos')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .order('created_at', { ascending: false });
+            
+            if (filter === 'public') {
+                query = query.eq('is_private', false);
+            } else if (filter === 'private') {
+                query = query.eq('is_private', true);
+            }
+            
+            const { data: photos, error } = await query;
+            
+            if (error) {
+                console.error('加载照片失败:', error);
+                photosGrid.innerHTML = '<p>加载失败，请重试</p>';
+                return;
+            }
+            
+            photosGrid.innerHTML = '';
+            
+            if (photos && photos.length > 0) {
+                photos.forEach(photo => {
+                    const photoCard = createPhotoCard(photo);
+                    photosGrid.appendChild(photoCard);
+                });
+                
+                document.getElementById('noPhotosMessage').style.display = 'none';
+            } else {
+                document.getElementById('noPhotosMessage').style.display = 'block';
+            }
+        }
+
+        // 创建照片卡片（复用首页的函数，稍作修改）
+        function createPhotoCard(photo) {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            card.dataset.id = photo.id;
+            
+            const formattedDate = new Date(photo.created_at).toLocaleDateString('zh-CN');
+            const privacyIcon = photo.is_private ? '<i class="fas fa-lock" style="margin-left: 5px;"></i>' : '';
+            
+            card.innerHTML = `
+                <img src="${photo.image_url}" alt="${photo.description || '照片'}" 
+                     class="photo-img" loading="lazy">
+                <div class="photo-info">
+                    <div class="photo-header">
+                        <div>
+                            <div class="photo-date">${formattedDate} ${privacyIcon}</div>
+                        </div>
+                    </div>
+                    <p class="photo-description">${photo.description || ''}</p>
+                    <div class="photo-keywords">
+                        ${photo.keywords ? photo.keywords.map(keyword => 
+                            `<span class="keyword">${keyword}</span>`
+                        ).join('') : ''}
+                    </div>
+                    <div class="photo-stats">
+                        <span><i class="fas fa-heart"></i> ${photo.likes_count || 0}</span>
+                        <span><i class="fas fa-comment"></i> ${photo.comments_count || 0}</span>
+                        <span><i class="fas fa-eye"></i> ${photo.view_count || 0}</span>
+                    </div>
+                </div>
+            `;
+            
+            card.onclick = () => openPhotoModal(photo.id);
+            return card;
+        }
+
+        // 打开照片模态框（复用首页的函数）
+        async function openPhotoModal(photoId) {
+            // 这里可以复用首页的模态框逻辑
+            // 为简化，直接在新窗口打开图片
+            const { data: photo } = await supabase
+                .from('photos')
+                .select('image_url')
+                .eq('id', photoId)
+                .single();
+            
+            if (photo) {
+                window.open(photo.image_url, '_blank');
+            }
+        }
+
+        // 更新关注按钮
+        async function updateFollowButton() {
+            const followBtn = document.getElementById('followBtn');
+            
+            if (!currentUser || isOwnProfile) {
+                followBtn.style.display = 'none';
+                return;
+            }
+            
+            // 检查是否已关注
+            const { data: existingFollow } = await supabase
+                .from('follows')
+                .select('id')
+                .eq('follower_id', currentUser.id)
+                .eq('following_id', currentUserId)
+                .single();
+            
+            if (existingFollow) {
+                followBtn.innerHTML = '<i class="fas fa-user-check"></i> 已关注';
+                followBtn.classList.add('following');
+            } else {
+                followBtn.innerHTML = '<i class="fas fa-user-plus"></i> 关注';
+                followBtn.classList.remove('following');
+            }
+            
+            followBtn.style.display = 'block';
+        }
+
+        // 关注/取消关注用户
+        async function toggleFollow() {
+            if (!currentUser) {
+                alert('请先登录');
+                return;
+            }
+            
+            const followBtn = document.getElementById('followBtn');
+            
+            // 检查是否已关注
+            const { data: existingFollow } = await supabase
+                .from('follows')
+                .select('id')
+                .eq('follower_id', currentUser.id)
+                .eq('following_id', currentUserId)
+                .single();
+            
+            if (existingFollow) {
+                // 取消关注
+                const { error } = await supabase
+                    .from('follows')
+                    .delete()
+                    .eq('id', existingFollow.id);
+                
+                if (!error) {
+                    followBtn.innerHTML = '<i class="fas fa-user-plus"></i> 关注';
+                    followBtn.classList.remove('following');
+                    loadUserStats(); // 刷新统计数据
+                }
+            } else {
+                // 关注
+                const { error } = await supabase
+                    .from('follows')
+                    .insert({
+                        follower_id: currentUser.id,
+                        following_id: currentUserId
+                    });
+                
+                if (!error) {
+                    followBtn.innerHTML = '<i class="fas fa-user-check"></i> 已关注';
+                    followBtn.classList.add('following');
+                    loadUserStats(); // 刷新统计数据
+                }
+            }
+        }
+
+        // 打开关注用户模态框
+        function openFollowModal() {
+            document.getElementById('followModal').style.display = 'block';
+            searchUsers('');
+        }
+
+        // 关闭关注用户模态框
+        function closeFollowModal() {
+            document.getElementById('followModal').style.display = 'none';
+        }
+
+        // 搜索用户（复用首页的函数）
+        async function searchUsers(query) {
+            const usersList = document.getElementById('usersList');
+            
+            if (!query) {
+                // 显示热门用户
+                const { data: photos } = await supabase
+                    .from('photos')
+                    .select('user_id, username, user_avatar')
+                    .limit(20);
+                
+                const uniqueUsers = [];
+                const seen = new Set();
+                
+                photos?.forEach(photo => {
+                    if (!seen.has(photo.user_id)) {
+                        seen.add(photo.user_id);
+                        uniqueUsers.push({
+                            id: photo.user_id,
+                            username: photo.username,
+                            avatar: photo.user_avatar
+                        });
+                    }
+                });
+                
+                displayUsers(uniqueUsers);
+                return;
+            }
+            
+            // 搜索用户
+            const { data: photos } = await supabase
+                .from('photos')
+                .select('user_id, username, user_avatar')
+                .ilike('username', `%${query}%`)
+                .limit(20);
+            
+            const uniqueUsers = [];
+            const seen = new Set();
+            
+            photos?.forEach(photo => {
+                if (!seen.has(photo.user_id)) {
+                    seen.add(photo.user_id);
+                    uniqueUsers.push({
+                        id: photo.user_id,
+                        username: photo.username,
+                        avatar: photo.user_avatar
+                    });
+                }
+            });
+            
+            displayUsers(uniqueUsers);
+        }
+
+        // 显示用户列表
+        function displayUsers(users) {
+            const usersList = document.getElementById('usersList');
+            usersList.innerHTML = '';
+            
+            if (users.length === 0) {
+                usersList.innerHTML = '<p>没有找到用户</p>';
+                return;
+            }
+            
+            users.forEach(user => {
+                const userItem = document.createElement('div');
+                userItem.className = 'user-item';
+                
+                userItem.innerHTML = `
+                    <img src="${user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=random'}" 
+                         class="avatar-md" alt="${user.username}"
+                         onclick="window.location.href='profile.html?user=${user.id}'">
+                    <div class="user-info">
+                        <h4 onclick="window.location.href='profile.html?user=${user.id}'">${user.username}</h4>
+                        <p>点击查看主页</p>
+                    </div>
+                `;
+                
+                usersList.appendChild(userItem);
+            });
+        }
+
+        // 切换移动端菜单
+        function toggleMenu() {
+            const mobileMenu = document.getElementById('mobileMenu');
+            mobileMenu.classList.toggle('active');
+        }
+    </script>
+</body>
+</html>

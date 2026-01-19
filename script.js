@@ -1,1951 +1,1064 @@
-// 主应用逻辑
+// ============================================
+// 光影分享 - 主JavaScript文件
+// 版本: 1.0.0
+// 作者: 光影分享团队
+// 最后更新: 2024-01-01
+// ============================================
+
+// 配置信息 - 请勿修改
+const SUPABASE_URL = 'https://szrybhleozpzfwhaoiha.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU';
+const CLOUDINARY_CLOUD_NAME = 'dy77idija';
+const CLOUDINARY_UPLOAD_PRESET = 'photo-share-app';
+const ADMIN_ID = 'd22a82b2-7343-43f9-a417-126bea312fdd'; // 管理员ID
+
+// 初始化Supabase客户端
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================
+// 全局变量
+// ============================================
+let currentUser = null;
+let currentPage = 0;
+let currentFilter = 'popular';
+let isLoading = false;
+let hasMore = true;
+let currentPhotoId = null;
+let likedPhotos = new Set();
+let userFollows = new Set();
+let realtimeSubscription = null;
+
+// ============================================
+// DOM加载完成后初始化
+// ============================================
 document.addEventListener('DOMContentLoaded', async function() {
-    // 全局变量
-    let currentPage = 'home';
-    let currentViewingPhotoId = null;
-    let photos = [];
-    let currentPageNum = 1;
-    const photosPerPage = 20;
+    console.log('网站初始化...');
     
-    // 初始化Supabase客户端
-    window.supabase = supabase.createClient(
-        window.SUPABASE_CONFIG.supabaseUrl,
-        window.SUPABASE_CONFIG.supabaseKey
-    );
-    
-    // 初始化管理器
-    if (!window.authManager) {
-        window.authManager = new AuthManager();
+    try {
+        // 1. 检查用户登录状态
+        await checkAuthStatus();
+        
+        // 2. 加载照片
+        await loadPhotos('popular');
+        
+        // 3. 设置事件监听器
+        setupEventListeners();
+        
+        // 4. 设置键盘快捷键
+        setupKeyboardShortcuts();
+        
+        // 5. 设置图片懒加载
+        setupLazyLoading();
+        
+        // 6. 设置实时更新
+        setupRealtimeUpdates();
+        
+        console.log('网站初始化完成');
+    } catch (error) {
+        console.error('初始化失败:', error);
+        showNotification('网站初始化失败，请刷新页面重试', 'error');
     }
-    
-    if (!window.uploadManager) {
-        window.uploadManager = new UploadManager();
-    }
-    
-    // 初始化事件监听器
-    initEventListeners();
-    
-    // 加载初始数据
-    await loadInitialData();
-    
-    // 显示首页
-    switchPage('home');
 });
 
-// 初始化事件监听器
-function initEventListeners() {
-    // 导航链接点击事件
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = link.getAttribute('href').substring(1);
-            switchPage(page);
-            
-            // 更新活动状态
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            link.classList.add('active');
-        });
-    });
-    
-    // 移动菜单按钮
-    const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
-    const navMenu = document.querySelector('.nav-menu');
-    
-    if (mobileMenuBtn && navMenu) {
-        mobileMenuBtn.addEventListener('click', () => {
-            navMenu.classList.toggle('show');
-        });
-    }
-    
-    // 搜索功能
-    const searchInput = document.getElementById('searchInput');
-    const searchBtn = document.getElementById('searchBtn');
-    
-    if (searchInput && searchBtn) {
-        // 按钮搜索
-        searchBtn.addEventListener('click', () => {
-            performSearch(searchInput.value);
-        });
-        
-        // 回车搜索
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                performSearch(searchInput.value);
-            }
-        });
-        
-        // 搜索建议
-        let searchTimeout;
-        searchInput.addEventListener('input', () => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                if (searchInput.value.length >= 2) {
-                    showSearchSuggestions(searchInput.value);
-                }
-            }, 300);
-        });
-    }
-    
-    // 探索页面搜索
-    const exploreSearch = document.getElementById('exploreSearch');
-    if (exploreSearch) {
-        exploreSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loadExplorePhotos(exploreSearch.value);
-            }
-        });
-    }
-    
-    // 排序选择
-    const sortSelect = document.getElementById('sortSelect');
-    if (sortSelect) {
-        sortSelect.addEventListener('change', () => {
-            loadExplorePhotos();
-        });
-    }
-    
-    // 加载更多按钮
-    const loadMoreBtn = document.getElementById('loadMoreBtn');
-    if (loadMoreBtn) {
-        loadMoreBtn.addEventListener('click', loadMorePhotos);
-    }
-    
-    // 开始探索按钮
-    const getStartedBtn = document.getElementById('getStartedBtn');
-    if (getStartedBtn) {
-        getStartedBtn.addEventListener('click', () => {
-            switchPage('explore');
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            document.querySelector('a[href="#explore"]').classList.add('active');
-        });
-    }
-    
-    // 新讨论按钮
-    const newDiscussionBtn = document.getElementById('newDiscussionBtn');
-    if (newDiscussionBtn) {
-        newDiscussionBtn.addEventListener('click', () => {
-            if (!authManager.isAuthenticated()) {
-                showMessage('请先登录再创建话题', 'error');
-                openAuthModal();
-                return;
-            }
-            openNewDiscussionModal();
-        });
-    }
-    
-    // 提交讨论
-    const submitDiscussionBtn = document.getElementById('submitDiscussionBtn');
-    if (submitDiscussionBtn) {
-        submitDiscussionBtn.addEventListener('click', submitDiscussion);
-    }
-    
-    // 提交上传
-    const submitUploadBtn = document.getElementById('submitUploadBtn');
-    if (submitUploadBtn) {
-        submitUploadBtn.addEventListener('click', () => {
-            uploadManager.uploadPhotos();
-        });
-    }
-    
-    // 登录表单
-    const loginBtn = document.getElementById('loginBtn');
-    if (loginBtn) {
-        loginBtn.addEventListener('click', async () => {
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            
-            if (!email || !password) {
-                showMessage('请输入邮箱和密码', 'error');
-                return;
-            }
-            
-            const success = await authManager.signIn(email, password);
-            if (success) {
-                closeAuthModal();
-            }
-        });
-    }
-    
-    // 注册表单
-    const registerBtn = document.getElementById('registerBtn');
-    if (registerBtn) {
-        registerBtn.addEventListener('click', async () => {
-            const username = document.getElementById('registerUsername').value;
-            const email = document.getElementById('registerEmail').value;
-            const password = document.getElementById('registerPassword').value;
-            const confirmPassword = document.getElementById('registerConfirmPassword').value;
-            
-            if (!username || !email || !password || !confirmPassword) {
-                showMessage('请填写所有字段', 'error');
-                return;
-            }
-            
-            if (password !== confirmPassword) {
-                showMessage('两次输入的密码不一致', 'error');
-                return;
-            }
-            
-            if (password.length < 6) {
-                showMessage('密码长度至少6位', 'error');
-                return;
-            }
-            
-            const success = await authManager.signUp(email, password, username);
-            if (success) {
-                closeAuthModal();
-            }
-        });
-    }
-    
-    // 认证标签切换
-    document.querySelectorAll('.auth-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            const tabName = tab.dataset.tab;
-            
-            // 更新标签状态
-            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            
-            // 显示对应表单
-            document.getElementById('loginForm').style.display = 
-                tabName === 'login' ? 'block' : 'none';
-            document.getElementById('registerForm').style.display = 
-                tabName === 'register' ? 'block' : 'none';
-        });
-    });
-    
-    // 关闭模态框
-    document.querySelectorAll('.close-modal').forEach(closeBtn => {
-        closeBtn.addEventListener('click', function() {
-            this.closest('.modal').style.display = 'none';
-        });
-    });
-    
-    // 关闭图片查看器
-    const closeImageViewer = document.querySelector('.close-image-viewer');
-    if (closeImageViewer) {
-        closeImageViewer.addEventListener('click', () => {
-            document.getElementById('imageViewer').style.display = 'none';
-        });
-    }
-    
-    // 图片查看器外部点击关闭
-    window.addEventListener('click', (e) => {
-        const modals = document.querySelectorAll('.modal');
-        modals.forEach(modal => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
-    });
-    
-    // 保存设置
-    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    if (saveSettingsBtn) {
-        saveSettingsBtn.addEventListener('click', saveSettings);
-    }
-    
-    // 更换头像
-    const changeAvatarBtn = document.getElementById('changeAvatarBtn');
-    if (changeAvatarBtn) {
-        changeAvatarBtn.addEventListener('click', () => {
-            // 创建文件输入元素
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = 'image/*';
-            fileInput.style.display = 'none';
-            
-            fileInput.addEventListener('change', async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                // 检查文件大小和类型
-                if (file.size > 5 * 1024 * 1024) { // 5MB限制
-                    showMessage('头像大小不能超过5MB', 'error');
-                    return;
-                }
-                
-                if (!file.type.startsWith('image/')) {
-                    showMessage('请选择图片文件', 'error');
-                    return;
-                }
-                
-                showLoading();
-                
-                try {
-                    // 上传到Cloudinary
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    formData.append('upload_preset', window.SUPABASE_CONFIG.cloudinaryUploadPreset);
-                    formData.append('cloud_name', window.SUPABASE_CONFIG.cloudinaryCloudName);
-                    
-                    const response = await fetch(`https://api.cloudinary.com/v1_1/${window.SUPABASE_CONFIG.cloudinaryCloudName}/upload`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.error) {
-                        throw new Error(data.error.message);
-                    }
-                    
-                    // 更新用户头像
-                    const updates = {
-                        avatar_url: data.secure_url,
-                        updated_at: new Date().toISOString()
-                    };
-                    
-                    const success = await authManager.updateProfile(updates);
-                    if (success) {
-                        // 更新设置模态框中的头像
-                        document.getElementById('settingsAvatar').src = data.secure_url;
-                        // 更新用户界面
-                        authManager.updateUIForLoggedInUser();
-                        showMessage('头像更新成功', 'success');
-                    }
-                    
-                } catch (error) {
-                    console.error('上传头像错误:', error);
-                    showMessage('头像上传失败: ' + error.message, 'error');
-                } finally {
-                    hideLoading();
-                }
-            });
-            
-            document.body.appendChild(fileInput);
-            fileInput.click();
-            document.body.removeChild(fileInput);
-        });
-    }
-    
-    // 提交评论
-    const submitCommentBtn = document.getElementById('submitCommentBtn');
-    if (submitCommentBtn) {
-        submitCommentBtn.addEventListener('click', submitComment);
-    }
-    
-    // 点赞按钮
-    document.addEventListener('click', async (e) => {
-        if (e.target.closest('.btn-like')) {
-            const likeBtn = e.target.closest('.btn-like');
-            const photoId = likeBtn.dataset.photoId;
-            
-            if (!authManager.isAuthenticated()) {
-                showMessage('请先登录再点赞', 'error');
-                openAuthModal();
-                return;
-            }
-            
-            if (photoId) {
-                await toggleLike(photoId, likeBtn);
-            }
-        }
-    });
-    
-    // 关注按钮
-    document.addEventListener('click', async (e) => {
-        if (e.target.closest('.follow-btn')) {
-            const followBtn = e.target.closest('.follow-btn');
-            const userId = followBtn.dataset.userId;
-            
-            if (!authManager.isAuthenticated()) {
-                showMessage('请先登录再关注', 'error');
-                openAuthModal();
-                return;
-            }
-            
-            if (userId) {
-                await toggleFollow(userId, followBtn);
-            }
-        }
-    });
-    
-    // 管理员标签切换
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('admin-tab')) {
-            const tabName = e.target.dataset.tab;
-            
-            // 更新标签状态
-            document.querySelectorAll('.admin-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            e.target.classList.add('active');
-            
-            // 显示对应内容
-            document.querySelectorAll('.admin-tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(tabName).classList.add('active');
-            
-            // 加载对应数据
-            if (tabName === 'managePhotos') {
-                loadAdminPhotos();
-            } else if (tabName === 'manageUsers') {
-                loadAdminUsers();
-            } else if (tabName === 'manageComments') {
-                loadAdminComments();
-            }
-        }
-    });
-    
-    // 用户资料标签切换
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('profile-tab')) {
-            const tabName = e.target.dataset.tab;
-            const userId = document.querySelector('.profile-avatar')?.dataset.userId || 
-                          document.querySelector('.follow-btn')?.dataset.userId;
-            
-            if (!userId) return;
-            
-            // 更新标签状态
-            document.querySelectorAll('.profile-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            e.target.classList.add('active');
-            
-            // 显示对应内容
-            document.querySelectorAll('.profile-tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(tabName).classList.add('active');
-            
-            // 加载对应数据
-            if (tabName === 'userPhotos') {
-                loadUserPhotos(userId);
-            } else if (tabName === 'userLikes') {
-                loadUserLikes(userId);
-            } else if (tabName === 'userFollowing') {
-                loadUserFollowing(userId);
-            } else if (tabName === 'userFollowers') {
-                loadUserFollowers(userId);
-            }
-        }
-    });
-    
-    // 管理照片搜索
-    const adminPhotoSearch = document.getElementById('adminPhotoSearch');
-    if (adminPhotoSearch) {
-        adminPhotoSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loadAdminPhotos(adminPhotoSearch.value);
-            }
-        });
-    }
-    
-    // 管理用户搜索
-    const adminUserSearch = document.getElementById('adminUserSearch');
-    if (adminUserSearch) {
-        adminUserSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loadAdminUsers(adminUserSearch.value);
-            }
-        });
-    }
-    
-    // 管理评论搜索
-    const adminCommentSearch = document.getElementById('adminCommentSearch');
-    if (adminCommentSearch) {
-        adminCommentSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loadAdminComments(adminCommentSearch.value);
-            }
-        });
-    }
-}
+// ============================================
+// 用户认证相关函数
+// ============================================
 
-// 页面切换
-function switchPage(pageName) {
-    // 隐藏所有页面
-    document.querySelectorAll('.page').forEach(page => {
-        page.classList.remove('active');
-    });
-    
-    // 显示目标页面
-    const targetPage = document.getElementById(pageName);
-    if (targetPage) {
-        targetPage.classList.add('active');
-        currentPage = pageName;
-        
-        // 滚动到顶部
-        window.scrollTo(0, 0);
-        
-        // 加载页面特定数据
-        loadPageData(pageName);
-    }
-}
-
-// 加载页面数据
-async function loadPageData(pageName) {
-    switch (pageName) {
-        case 'home':
-            await loadHomeData();
-            break;
-        case 'explore':
-            await loadExplorePhotos();
-            break;
-        case 'discussions':
-            await loadDiscussions();
-            break;
-    }
-}
-
-// 加载初始数据
-async function loadInitialData() {
-    showLoading();
-    
+/**
+ * 检查用户登录状态
+ */
+async function checkAuthStatus() {
     try {
-        // 加载热门照片
-        await loadPopularPhotos();
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        // 加载最新照片
-        await loadRecentPhotos();
-        
-        // 加载讨论区
-        await loadDiscussions();
-        
-    } catch (error) {
-        console.error('加载初始数据错误:', error);
-    } finally {
-        hideLoading();
-    }
-}
-
-// 加载首页数据
-async function loadHomeData() {
-    await loadPopularPhotos();
-    await loadRecentPhotos();
-}
-
-// 加载热门照片
-async function loadPopularPhotos() {
-    try {
-        const { data, error } = await supabase
-            .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('is_private', false)
-            .order('likes_count', { ascending: false })
-            .limit(12);
-        
-        if (error) throw error;
-        
-        displayPhotos(data, 'popularPhotos');
-    } catch (error) {
-        console.error('加载热门照片错误:', error);
-    }
-}
-
-// 加载最新照片
-async function loadRecentPhotos() {
-    try {
-        const { data, error } = await supabase
-            .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('is_private', false)
-            .order('created_at', { ascending: false })
-            .limit(12);
-        
-        if (error) throw error;
-        
-        displayPhotos(data, 'recentPhotos');
-    } catch (error) {
-        console.error('加载最新照片错误:', error);
-    }
-}
-
-// 加载探索照片
-async function loadExplorePhotos(searchQuery = '') {
-    currentPageNum = 1;
-    
-    try {
-        let query = supabase
-            .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `, { count: 'exact' })
-            .eq('is_private', false);
-        
-        // 应用搜索
-        if (searchQuery) {
-            query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
-                        .contains('keywords', [searchQuery]);
+        if (error) {
+            console.error('获取会话失败:', error);
+            return;
         }
         
-        // 应用排序
-        const sortSelect = document.getElementById('sortSelect');
-        if (sortSelect) {
-            const sortBy = sortSelect.value;
+        if (session && session.user) {
+            currentUser = session.user;
+            console.log('用户已登录:', currentUser.email);
             
-            if (sortBy === 'popular') {
-                query = query.order('likes_count', { ascending: false });
-            } else if (sortBy === 'most_viewed') {
-                query = query.order('views_count', { ascending: false });
-            } else {
-                query = query.order('created_at', { ascending: false });
-            }
+            // 更新UI
+            updateUIForLoggedInUser();
+            
+            // 加载用户数据
+            await Promise.all([
+                loadLikedPhotos(),
+                loadUserFollows()
+            ]);
+            
+            // 检查是否为管理员
+            checkAdminStatus();
         } else {
-            query = query.order('created_at', { ascending: false });
+            console.log('用户未登录');
+            updateUIForGuest();
         }
-        
-        // 应用分页
-        query = query.range(
-            (currentPageNum - 1) * photosPerPage,
-            currentPageNum * photosPerPage - 1
-        );
-        
-        const { data, error, count } = await query;
-        
-        if (error) throw error;
-        
-        photos = data || [];
-        displayPhotos(photos, 'explorePhotos');
-        
-        // 显示加载更多按钮
-        const loadMoreBtn = document.getElementById('loadMoreBtn');
-        if (loadMoreBtn) {
-            loadMoreBtn.style.display = count > photosPerPage ? 'block' : 'none';
-        }
-        
     } catch (error) {
-        console.error('加载探索照片错误:', error);
+        console.error('检查认证状态失败:', error);
     }
 }
 
-// 加载更多照片
-async function loadMorePhotos() {
-    currentPageNum++;
+/**
+ * 更新登录用户的UI
+ */
+function updateUIForLoggedInUser() {
+    const userAvatar = document.getElementById('userAvatar');
+    const authLink = document.getElementById('authLink');
+    const mobileAuthLink = document.getElementById('mobileAuthLink');
+    const profileLink = document.getElementById('profileLink');
+    const mobileProfileLink = document.getElementById('mobileProfileLink');
+    const myPhotosLink = document.getElementById('myPhotosLink');
+    const mobileMyPhotosLink = document.getElementById('mobileMyPhotosLink');
+    
+    if (currentUser && userAvatar) {
+        // 更新头像
+        if (currentUser.user_metadata?.avatar_url) {
+            userAvatar.src = currentUser.user_metadata.avatar_url;
+        } else {
+            const username = currentUser.user_metadata?.name || currentUser.email.split('@')[0];
+            userAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`;
+        }
+        
+        // 隐藏登录按钮，显示用户相关链接
+        if (authLink) authLink.style.display = 'none';
+        if (mobileAuthLink) mobileAuthLink.style.display = 'none';
+        
+        // 设置个人主页链接
+        if (profileLink) {
+            profileLink.href = 'profile.html';
+            profileLink.style.display = 'block';
+        }
+        if (mobileProfileLink) {
+            mobileProfileLink.href = 'profile.html';
+            mobileProfileLink.style.display = 'block';
+        }
+        
+        // 设置我的照片链接
+        if (myPhotosLink) {
+            myPhotosLink.onclick = () => {
+                window.location.href = `profile.html?user=${currentUser.id}`;
+                return false;
+            };
+            myPhotosLink.style.display = 'block';
+        }
+        if (mobileMyPhotosLink) {
+            mobileMyPhotosLink.onclick = () => {
+                window.location.href = `profile.html?user=${currentUser.id}`;
+                return false;
+            };
+            mobileMyPhotosLink.style.display = 'block';
+        }
+    }
+}
+
+/**
+ * 更新游客UI
+ */
+function updateUIForGuest() {
+    const authLink = document.getElementById('authLink');
+    const mobileAuthLink = document.getElementById('mobileAuthLink');
+    
+    if (authLink) authLink.style.display = 'block';
+    if (mobileAuthLink) mobileAuthLink.style.display = 'block';
+}
+
+/**
+ * 检查管理员状态
+ */
+function checkAdminStatus() {
+    if (currentUser && currentUser.id === ADMIN_ID) {
+        console.log('管理员已登录');
+        // 在导航栏添加管理员链接（如果不存在）
+        const navLinks = document.querySelector('.nav-links');
+        if (navLinks && !document.querySelector('#adminLink')) {
+            const adminLink = document.createElement('a');
+            adminLink.id = 'adminLink';
+            adminLink.href = 'admin.html';
+            adminLink.className = 'admin-link';
+            adminLink.innerHTML = '<i class="fas fa-user-shield"></i> 管理';
+            adminLink.style.color = '#10b981';
+            adminLink.style.fontWeight = 'bold';
+            navLinks.insertBefore(adminLink, navLinks.querySelector('.dropdown'));
+        }
+    }
+}
+
+// ============================================
+// 照片加载和显示函数
+// ============================================
+
+/**
+ * 加载照片
+ * @param {string} filter - 筛选类型: popular, recent, following
+ * @param {boolean} reset - 是否重置加载
+ */
+async function loadPhotos(filter = 'popular', reset = true) {
+    if (isLoading) return;
+    
+    isLoading = true;
+    console.log(`正在加载照片，筛选: ${filter}, 重置: ${reset}`);
+    
+    if (reset) {
+        currentPage = 0;
+        hasMore = true;
+        const photosGrid = document.getElementById('photosGrid');
+        if (photosGrid) {
+            photosGrid.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
+                </div>
+            `;
+        }
+    }
+    
+    currentFilter = filter;
+    
+    // 更新筛选按钮状态
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+        const btnText = btn.textContent.toLowerCase();
+        if ((filter === 'popular' && btnText.includes('热门')) ||
+            (filter === 'recent' && btnText.includes('最新')) ||
+            (filter === 'following' && btnText.includes('关注'))) {
+            btn.classList.add('active');
+        }
+    });
     
     try {
         let query = supabase
             .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
+            .select('*', { count: 'exact' })
             .eq('is_private', false)
             .order('created_at', { ascending: false });
         
-        // 应用搜索
-        const exploreSearch = document.getElementById('exploreSearch');
-        if (exploreSearch && exploreSearch.value) {
-            query = query.or(`title.ilike.%${exploreSearch.value}%,description.ilike.%${exploreSearch.value}%`)
-                        .contains('keywords', [exploreSearch.value]);
-        }
-        
-        // 应用排序
-        const sortSelect = document.getElementById('sortSelect');
-        if (sortSelect) {
-            const sortBy = sortSelect.value;
-            
-            if (sortBy === 'popular') {
-                query = query.order('likes_count', { ascending: false });
-            } else if (sortBy === 'most_viewed') {
-                query = query.order('views_count', { ascending: false });
+        if (filter === 'popular') {
+            query = query.order('likes_count', { ascending: false });
+        } else if (filter === 'following') {
+            if (!currentUser) {
+                showNotification('请先登录查看关注内容', 'info');
+                isLoading = false;
+                return;
             }
+            
+            // 获取关注用户的ID列表
+            const followingIds = await getFollowingUserIds();
+            if (followingIds.length === 0) {
+                showNotification('你还没有关注任何人，快去发现用户吧！', 'info');
+                const photosGrid = document.getElementById('photosGrid');
+                if (photosGrid) {
+                    photosGrid.innerHTML = `
+                        <div class="no-photos">
+                            <i class="fas fa-user-plus" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                            <p>你还没有关注任何人</p>
+                            <button class="btn-primary" onclick="openFollowModal()">去发现用户</button>
+                        </div>
+                    `;
+                }
+                isLoading = false;
+                return;
+            }
+            
+            query = query.in('user_id', followingIds);
         }
         
-        query = query.range(
-            (currentPageNum - 1) * photosPerPage,
-            currentPageNum * photosPerPage - 1
-        );
+        const { data: photos, error, count } = await query
+            .range(currentPage * 20, (currentPage + 1) * 20 - 1);
         
-        const { data, error } = await query;
+        if (error) {
+            throw new Error(`加载照片失败: ${error.message}`);
+        }
         
-        if (error) throw error;
+        isLoading = false;
         
-        if (data && data.length > 0) {
-            photos = [...photos, ...data];
-            displayPhotos(photos, 'explorePhotos');
+        const photosGrid = document.getElementById('photosGrid');
+        if (!photosGrid) return;
+        
+        if (reset) {
+            photosGrid.innerHTML = '';
+        }
+        
+        if (photos && photos.length > 0) {
+            displayPhotos(photos);
+            currentPage++;
+            hasMore = photos.length === 20;
+            
+            // 如果照片数量少于预期，尝试再加载一次
+            if (photos.length < 20 && hasMore) {
+                hasMore = false;
+            }
         } else {
-            showMessage('没有更多照片了', 'info');
-            document.getElementById('loadMoreBtn').style.display = 'none';
+            if (reset) {
+                photosGrid.innerHTML = `
+                    <div class="no-photos">
+                        <i class="fas fa-camera" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <p>还没有照片</p>
+                        <p>快来上传第一张照片吧！</p>
+                        <a href="upload.html" class="btn-primary">上传照片</a>
+                    </div>
+                `;
+            }
+            hasMore = false;
         }
         
+        updateLoadMoreButton();
     } catch (error) {
-        console.error('加载更多照片错误:', error);
-        currentPageNum--;
+        console.error('加载照片失败:', error);
+        showNotification('加载照片失败，请重试', 'error');
+        isLoading = false;
+        
+        const photosGrid = document.getElementById('photosGrid');
+        if (photosGrid) {
+            photosGrid.innerHTML = `
+                <div class="error-message">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>加载失败: ${error.message}</p>
+                    <button class="btn-secondary" onclick="loadPhotos('${filter}', true)">重试</button>
+                </div>
+            `;
+        }
     }
 }
 
-// 显示照片
-function displayPhotos(photos, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+/**
+ * 显示照片
+ * @param {Array} photos - 照片数组
+ */
+function displayPhotos(photos) {
+    const photosGrid = document.getElementById('photosGrid');
+    if (!photosGrid) return;
     
-    if (!photos || photos.length === 0) {
-        container.innerHTML = '<p class="no-photos">暂时没有照片</p>';
-        return;
+    photos.forEach(photo => {
+        const photoCard = createPhotoCard(photo);
+        photosGrid.appendChild(photoCard);
+    });
+}
+
+/**
+ * 创建照片卡片
+ * @param {Object} photo - 照片对象
+ * @returns {HTMLElement} 照片卡片元素
+ */
+function createPhotoCard(photo) {
+    const card = document.createElement('div');
+    card.className = 'photo-card';
+    card.dataset.id = photo.id;
+    
+    const formattedDate = new Date(photo.created_at).toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    // 构建关键词HTML
+    let keywordsHtml = '';
+    if (photo.keywords && Array.isArray(photo.keywords)) {
+        keywordsHtml = photo.keywords.map(keyword => 
+            `<span class="keyword" onclick="searchKeyword('${keyword}')">${keyword}</span>`
+        ).join('');
     }
     
-    container.innerHTML = photos.map(photo => `
-        <div class="photo-card" data-photo-id="${photo.id}">
-            <img src="${photo.image_url}" 
-                 alt="${photo.title || '照片'}" 
-                 class="photo-image"
-                 onclick="openImageViewer('${photo.id}')">
-            <div class="photo-content">
-                <h3 class="photo-title">${photo.title || '未命名照片'}</h3>
-                <div class="photo-author">
-                    <img src="${photo.profiles.avatar_url || 'https://ui-avatars.com/api/?name=User&background=6c63ff&color=fff'}" 
-                         alt="${photo.profiles.username}" 
-                         class="author-avatar"
-                         onclick="loadUserProfilePage('${photo.user_id}')"
-                         style="cursor: pointer;">
-                    <span class="author-name">${photo.profiles.username}</span>
-                </div>
-                <div class="photo-stats">
-                    <span><i class="fas fa-eye"></i> ${photo.views_count || 0}</span>
-                    <span><i class="fas fa-heart"></i> ${photo.likes_count || 0}</span>
-                    <span><i class="fas fa-comment"></i> ${photo.comments_count || 0}</span>
-                </div>
+    card.innerHTML = `
+        <div class="photo-image-container">
+            <img src="${photo.image_url}" alt="${photo.description || '照片'}" 
+                 class="photo-img" loading="lazy">
+            <div class="photo-overlay">
+                <button class="quick-like-btn" onclick="event.stopPropagation(); quickLikePhoto('${photo.id}')">
+                    <i class="${likedPhotos.has(photo.id) ? 'fas' : 'far'} fa-heart"></i>
+                </button>
             </div>
         </div>
-    `).join('');
+        <div class="photo-info">
+            <div class="photo-header">
+                <img src="${photo.user_avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(photo.username) + '&background=random'}" 
+                     class="avatar-sm" alt="${photo.username}" 
+                     onclick="event.stopPropagation(); goToUserProfile('${photo.user_id}')">
+                <div>
+                    <div class="photo-username" 
+                         onclick="event.stopPropagation(); goToUserProfile('${photo.user_id}')">
+                        ${photo.username}
+                    </div>
+                    <div class="photo-date">${formattedDate}</div>
+                </div>
+                ${currentUser && photo.user_id === currentUser.id ? 
+                    `<button class="photo-privacy-btn" onclick="event.stopPropagation(); togglePhotoPrivacy('${photo.id}', ${photo.is_private})">
+                        <i class="fas fa-${photo.is_private ? 'lock' : 'lock-open'}"></i>
+                    </button>` : ''
+                }
+            </div>
+            ${photo.description ? `<p class="photo-description">${photo.description}</p>` : ''}
+            ${keywordsHtml ? `<div class="photo-keywords">${keywordsHtml}</div>` : ''}
+            <div class="photo-stats">
+                <span><i class="fas fa-heart"></i> ${photo.likes_count || 0}</span>
+                <span><i class="fas fa-comment"></i> ${photo.comments_count || 0}</span>
+                <span><i class="fas fa-eye"></i> ${photo.view_count || 0}</span>
+                ${photo.is_private ? '<span><i class="fas fa-lock"></i> 私密</span>' : ''}
+            </div>
+        </div>
+    `;
+    
+    // 添加点击事件
+    card.addEventListener('click', () => openPhotoModal(photo.id));
+    
+    return card;
 }
 
+/**
+ * 加载更多照片
+ */
+function loadMorePhotos() {
+    if (!isLoading && hasMore) {
+        loadPhotos(currentFilter, false);
+    }
+}
+
+/**
+ * 更新加载更多按钮
+ */
+function updateLoadMoreButton() {
+    const loadMoreBtn = document.getElementById('loadMoreBtn');
+    if (loadMoreBtn) {
+        if (!hasMore) {
+            loadMoreBtn.style.display = 'none';
+        } else {
+            loadMoreBtn.style.display = 'block';
+            loadMoreBtn.disabled = isLoading;
+            loadMoreBtn.innerHTML = isLoading ? 
+                '<i class="fas fa-spinner fa-spin"></i> 加载中...' : 
+                '<i class="fas fa-redo"></i> 加载更多';
+        }
+    }
+}
+
+// ============================================
 // 搜索功能
-async function performSearch(query) {
-    if (!query.trim()) {
-        showMessage('请输入搜索关键词', 'warning');
+// ============================================
+
+/**
+ * 搜索照片
+ */
+async function searchPhotos() {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.trim();
+    
+    if (!searchTerm) {
+        loadPhotos(currentFilter, true);
         return;
     }
     
-    showLoading();
+    isLoading = true;
+    
+    const photosGrid = document.getElementById('photosGrid');
+    if (photosGrid) {
+        photosGrid.innerHTML = `
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>搜索中...</p>
+            </div>
+        `;
+    }
     
     try {
-        // 搜索照片
-        const { data: photos, error: photosError } = await supabase
+        // 使用模糊搜索：在关键词、描述和用户名中搜索
+        const { data: photos, error } = await supabase
             .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('is_private', false)
-            .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-            .contains('keywords', [query])
-            .limit(20);
-        
-        if (photosError) throw photosError;
-        
-        // 搜索用户
-        const { data: users, error: usersError } = await supabase
-            .from('profiles')
             .select('*')
-            .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
-            .limit(10);
+            .or(`description.ilike.%${searchTerm}%,keywords.cs.{${searchTerm}}`)
+            .eq('is_private', false)
+            .order('created_at', { ascending: false });
         
-        if (usersError) throw usersError;
-        
-        // 显示搜索结果
-        if ((!photos || photos.length === 0) && (!users || users.length === 0)) {
-            showMessage('没有找到相关结果', 'info');
-        } else {
-            // 切换到探索页面显示搜索结果
-            switchPage('explore');
-            
-            // 更新搜索框
-            const exploreSearch = document.getElementById('exploreSearch');
-            if (exploreSearch) {
-                exploreSearch.value = query;
-            }
-            
-            // 显示照片结果
-            displayPhotos(photos, 'explorePhotos');
-            
-            // 隐藏加载更多按钮
-            const loadMoreBtn = document.getElementById('loadMoreBtn');
-            if (loadMoreBtn) {
-                loadMoreBtn.style.display = 'none';
-            }
+        if (error) {
+            throw new Error(`搜索失败: ${error.message}`);
         }
         
+        isLoading = false;
+        
+        if (photosGrid) {
+            photosGrid.innerHTML = '';
+        }
+        
+        if (photos && photos.length > 0) {
+            displayPhotos(photos);
+            showNotification(`找到 ${photos.length} 个结果`, 'success');
+        } else {
+            if (photosGrid) {
+                photosGrid.innerHTML = `
+                    <div class="no-results">
+                        <i class="fas fa-search" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>没有找到相关照片</h3>
+                        <p>尝试其他关键词或上传你的照片</p>
+                        <button class="btn-secondary" onclick="loadPhotos('popular', true)">查看所有照片</button>
+                    </div>
+                `;
+            }
+        }
     } catch (error) {
-        console.error('搜索错误:', error);
-        showMessage('搜索失败，请重试', 'error');
-    } finally {
-        hideLoading();
+        console.error('搜索失败:', error);
+        showNotification('搜索失败，请重试', 'error');
+        isLoading = false;
     }
 }
 
-// 显示搜索建议
-async function showSearchSuggestions(query) {
-    // 这里可以实现搜索建议功能
-    // 为了简化，暂时不实现
+/**
+ * 搜索关键词
+ * @param {string} keyword - 关键词
+ */
+function searchKeyword(keyword) {
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = keyword;
+        searchPhotos();
+    }
 }
 
-// 打开图片查看器
-async function openImageViewer(photoId) {
-    currentViewingPhotoId = photoId;
-    
-    showLoading();
+// ============================================
+// 照片模态框相关函数
+// ============================================
+
+/**
+ * 打开照片模态框
+ * @param {string} photoId - 照片ID
+ */
+async function openPhotoModal(photoId) {
+    currentPhotoId = photoId;
     
     try {
         // 获取照片详情
         const { data: photo, error } = await supabase
             .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    id,
-                    username,
-                    avatar_url,
-                    bio
-                )
-            `)
+            .select('*')
             .eq('id', photoId)
             .single();
         
-        if (error) throw error;
-        
-        // 检查隐私设置
-        if (photo.is_private && 
-            (!authManager.isAuthenticated() || 
-             authManager.currentUser.id !== photo.user_id)) {
-            showMessage('这张照片是私密的', 'error');
-            hideLoading();
-            return;
+        if (error || !photo) {
+            throw new Error('加载照片失败');
         }
         
-        // 增加浏览计数
+        // 增加浏览量
         await supabase
             .from('photos')
-            .update({ views_count: (photo.views_count || 0) + 1 })
+            .update({ view_count: (photo.view_count || 0) + 1 })
             .eq('id', photoId);
         
-        // 更新图片查看器内容
-        document.getElementById('viewedImage').src = photo.image_url;
-        document.getElementById('authorAvatar').src = photo.profiles.avatar_url;
-        document.getElementById('authorName').textContent = photo.profiles.username;
-        document.getElementById('imageDate').textContent = new Date(photo.created_at).toLocaleDateString('zh-CN');
-        document.getElementById('imageDescription').textContent = photo.description || '暂无描述';
-        document.getElementById('viewCount').textContent = (photo.views_count || 0) + 1;
-        document.getElementById('likeCount').textContent = photo.likes_count || 0;
-        document.getElementById('commentCount').textContent = photo.comments_count || 0;
+        // 更新模态框内容
+        updateModalContent(photo);
         
-        // 显示关键词
-        const keywordsContainer = document.getElementById('imageKeywords');
-        keywordsContainer.innerHTML = '';
-        if (photo.keywords && photo.keywords.length > 0) {
-            photo.keywords.forEach(keyword => {
-                const span = document.createElement('span');
-                span.className = 'keyword';
-                span.textContent = keyword;
-                keywordsContainer.appendChild(span);
-            });
+        // 显示模态框
+        const modal = document.getElementById('imageModal');
+        if (modal) {
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
         }
-        
-        // 设置点赞按钮
-        const likeBtn = document.getElementById('likeBtn');
-        likeBtn.dataset.photoId = photoId;
-        
-        // 检查用户是否已经点赞
-        if (authManager.isAuthenticated()) {
-            const { data: like } = await supabase
-                .from('likes')
-                .select('id')
-                .eq('user_id', authManager.currentUser.id)
-                .eq('photo_id', photoId)
-                .single();
-            
-            if (like) {
-                likeBtn.classList.add('liked');
-                likeBtn.innerHTML = '<i class="fas fa-heart"></i> 已点赞';
-            } else {
-                likeBtn.classList.remove('liked');
-                likeBtn.innerHTML = '<i class="far fa-heart"></i> 点赞';
-            }
-        }
-        
-        // 设置下载按钮
-        const downloadBtn = document.getElementById('downloadBtn');
-        downloadBtn.onclick = () => {
-            const link = document.createElement('a');
-            link.href = photo.image_url;
-            link.download = photo.title || 'photo';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
         
         // 加载评论
-        await loadComments(photoId);
-        
-        // 加载相关内容
-        await loadRelatedPhotos(photoId, photo.keywords);
-        
-        // 显示图片查看器
-        hideLoading();
-        document.getElementById('imageViewer').style.display = 'block';
-        
+        loadComments(photoId);
     } catch (error) {
-        hideLoading();
-        console.error('打开图片查看器错误:', error);
-        showMessage('加载照片失败', 'error');
+        console.error('打开照片模态框失败:', error);
+        showNotification('加载照片失败', 'error');
     }
 }
 
-// 加载评论
-async function loadComments(photoId) {
-    try {
-        const { data: comments, error } = await supabase
-            .from('comments')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('photo_id', photoId)
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        const commentsList = document.getElementById('commentsList');
-        if (!commentsList) return;
-        
-        if (!comments || comments.length === 0) {
-            commentsList.innerHTML = '<p class="no-comments">暂无评论</p>';
-            return;
-        }
-        
-        commentsList.innerHTML = comments.map(comment => `
-            <div class="comment">
-                <img src="${comment.profiles.avatar_url}" 
-                     alt="${comment.profiles.username}" 
-                     class="comment-avatar"
-                     onclick="loadUserProfilePage('${comment.user_id}')"
-                     style="cursor: pointer;">
-                <div class="comment-content">
-                    <div class="comment-author" onclick="loadUserProfilePage('${comment.user_id}')" style="cursor: pointer;">
-                        ${comment.profiles.username}
-                    </div>
-                    <div class="comment-date">${new Date(comment.created_at).toLocaleDateString('zh-CN')}</div>
-                    <div class="comment-text">${comment.content}</div>
-                </div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载评论错误:', error);
-    }
-}
-
-// 提交评论
-async function submitComment() {
-    if (!authManager.isAuthenticated()) {
-        showMessage('请先登录再评论', 'error');
-        openAuthModal();
-        return;
+/**
+ * 更新模态框内容
+ * @param {Object} photo - 照片对象
+ */
+function updateModalContent(photo) {
+    const modalImage = document.getElementById('modalImage');
+    const modalUsername = document.getElementById('modalUsername');
+    const modalUserAvatar = document.getElementById('modalUserAvatar');
+    const modalDate = document.getElementById('modalDate');
+    const modalDescription = document.getElementById('modalDescription');
+    const likeCount = document.getElementById('likeCount');
+    const likeBtn = document.getElementById('likeBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const keywordsContainer = document.querySelector('.keywords');
+    
+    if (modalImage) modalImage.src = photo.image_url;
+    if (modalUsername) {
+        modalUsername.textContent = photo.username;
+        modalUsername.onclick = () => {
+            closeModal();
+            goToUserProfile(photo.user_id);
+        };
     }
     
-    const commentInput = document.getElementById('commentInput');
-    const content = commentInput.value.trim();
-    
-    if (!content) {
-        showMessage('请输入评论内容', 'error');
-        return;
+    if (modalUserAvatar) {
+        modalUserAvatar.src = photo.user_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(photo.username)}&background=random`;
+        modalUserAvatar.onclick = () => {
+            closeModal();
+            goToUserProfile(photo.user_id);
+        };
     }
     
-    if (!currentViewingPhotoId) {
-        showMessage('无法找到照片', 'error');
-        return;
+    if (modalDate) {
+        modalDate.textContent = new Date(photo.created_at).toLocaleString('zh-CN');
     }
     
-    showLoading();
+    if (modalDescription) {
+        modalDescription.textContent = photo.description || '';
+    }
     
-    try {
-        // 插入评论
-        const { error } = await supabase
-            .from('comments')
-            .insert([{
-                user_id: authManager.currentUser.id,
-                photo_id: currentViewingPhotoId,
-                content: content
-            }]);
-        
-        if (error) throw error;
-        
-        // 更新照片评论计数
-        await supabase
-            .from('photos')
-            .update({ 
-                comments_count: supabase.raw('COALESCE(comments_count, 0) + 1'),
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', currentViewingPhotoId);
-        
-        // 清空输入框
-        commentInput.value = '';
-        
-        // 重新加载评论
-        await loadComments(currentViewingPhotoId);
-        
-        // 更新评论计数显示
-        const commentCount = document.getElementById('commentCount');
-        const currentCount = parseInt(commentCount.textContent) || 0;
-        commentCount.textContent = currentCount + 1;
-        
-        hideLoading();
-        showMessage('评论发表成功', 'success');
-        
-    } catch (error) {
-        hideLoading();
-        console.error('提交评论错误:', error);
-        showMessage('评论发表失败', 'error');
+    if (likeCount) {
+        likeCount.textContent = photo.likes_count || 0;
     }
-}
-
-// 加载相关内容
-async function loadRelatedPhotos(photoId, keywords) {
-    try {
-        if (!keywords || keywords.length === 0) {
-            document.getElementById('relatedPhotos').innerHTML = '<p>暂无相关内容</p>';
-            return;
-        }
-        
-        // 使用关键词搜索相关照片（排除当前照片）
-        const { data: relatedPhotos, error } = await supabase
-            .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('is_private', false)
-            .neq('id', photoId)
-            .overlaps('keywords', keywords)
-            .limit(6)
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        const relatedContainer = document.getElementById('relatedPhotos');
-        if (!relatedContainer) return;
-        
-        if (!relatedPhotos || relatedPhotos.length === 0) {
-            relatedContainer.innerHTML = '<p>暂无相关内容</p>';
-            return;
-        }
-        
-        relatedContainer.innerHTML = relatedPhotos.map(photo => `
-            <div class="related-photo" onclick="openImageViewer('${photo.id}')">
-                <img src="${photo.image_url}" alt="${photo.title || '照片'}" class="related-photo-img">
-                <div class="related-photo-title">${photo.title || '未命名照片'}</div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载相关内容错误:', error);
-        document.getElementById('relatedPhotos').innerHTML = '<p>加载相关内容失败</p>';
+    
+    if (likeBtn) {
+        updateLikeButton(likeBtn, photo.id);
     }
-}
-
-// 点赞/取消点赞
-async function toggleLike(photoId, likeBtn) {
-    try {
-        // 检查是否已经点赞
-        const { data: existingLike } = await supabase
-            .from('likes')
-            .select('id')
-            .eq('user_id', authManager.currentUser.id)
-            .eq('photo_id', photoId)
-            .single();
+    
+    if (deleteBtn) {
+        // 如果是自己的照片或者是管理员，显示删除按钮
+        const isOwner = currentUser && photo.user_id === currentUser.id;
+        const isAdmin = currentUser && currentUser.id === ADMIN_ID;
         
-        if (existingLike) {
-            // 取消点赞
-            await supabase
-                .from('likes')
-                .delete()
-                .eq('id', existingLike.id);
-            
-            // 更新计数
-            await supabase
-                .from('photos')
-                .update({ 
-                    likes_count: supabase.raw('GREATEST(COALESCE(likes_count, 0) - 1, 0)'),
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', photoId);
-            
-            // 更新按钮状态
-            likeBtn.classList.remove('liked');
-            likeBtn.innerHTML = '<i class="far fa-heart"></i> 点赞';
-            
-            // 更新计数显示
-            const likeCount = document.getElementById('likeCount');
-            const currentCount = parseInt(likeCount.textContent) || 0;
-            likeCount.textContent = Math.max(0, currentCount - 1);
-            
+        if (isOwner || isAdmin) {
+            deleteBtn.style.display = 'block';
+            deleteBtn.onclick = () => deletePhoto(photo.id, isAdmin);
         } else {
-            // 点赞
-            await supabase
-                .from('likes')
-                .insert([{
-                    user_id: authManager.currentUser.id,
-                    photo_id: photoId
-                }]);
-            
-            // 更新计数
-            await supabase
-                .from('photos')
-                .update({ 
-                    likes_count: supabase.raw('COALESCE(likes_count, 0) + 1'),
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', photoId);
-            
-            // 更新按钮状态
-            likeBtn.classList.add('liked');
-            likeBtn.innerHTML = '<i class="fas fa-heart"></i> 已点赞';
-            
-            // 更新计数显示
-            const likeCount = document.getElementById('likeCount');
-            const currentCount = parseInt(likeCount.textContent) || 0;
-            likeCount.textContent = currentCount + 1;
+            deleteBtn.style.display = 'none';
         }
-        
-    } catch (error) {
-        console.error('点赞操作错误:', error);
-        showMessage('操作失败，请重试', 'error');
-    }
-}
-
-// 加载讨论区
-async function loadDiscussions() {
-    try {
-        const { data: discussions, error } = await supabase
-            .from('discussions')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .order('created_at', { ascending: false })
-            .limit(20);
-        
-        if (error) throw error;
-        
-        const discussionsList = document.getElementById('discussionsList');
-        if (!discussionsList) return;
-        
-        if (!discussions || discussions.length === 0) {
-            discussionsList.innerHTML = '<p class="no-discussions">暂无讨论话题</p>';
-            return;
-        }
-        
-        discussionsList.innerHTML = discussions.map(discussion => `
-            <div class="discussion-card">
-                <div class="discussion-header">
-                    <div class="discussion-author">
-                        <img src="${discussion.profiles.avatar_url}" 
-                             alt="${discussion.profiles.username}" 
-                             class="author-avatar">
-                        <span>${discussion.profiles.username}</span>
-                    </div>
-                    <div class="discussion-date">${new Date(discussion.created_at).toLocaleDateString('zh-CN')}</div>
-                </div>
-                <h3 class="discussion-title">${discussion.title}</h3>
-                <p class="discussion-content">${discussion.content}</p>
-                <div class="discussion-stats">
-                    <span><i class="fas fa-heart"></i> ${discussion.likes_count || 0}</span>
-                    <span><i class="fas fa-comment"></i> ${discussion.comments_count || 0}</span>
-                </div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载讨论区错误:', error);
-    }
-}
-
-// 打开新讨论模态框
-function openNewDiscussionModal() {
-    const modal = document.getElementById('newDiscussionModal');
-    if (modal) {
-        modal.style.display = 'block';
-    }
-}
-
-// 提交讨论
-async function submitDiscussion() {
-    const title = document.getElementById('discussionTitle').value.trim();
-    const content = document.getElementById('discussionContent').value.trim();
-    
-    if (!title || !content) {
-        showMessage('请填写标题和内容', 'error');
-        return;
     }
     
-    showLoading();
-    
-    try {
-        const { error } = await supabase
-            .from('discussions')
-            .insert([{
-                user_id: authManager.currentUser.id,
-                title: title,
-                content: content
-            }]);
-        
-        if (error) throw error;
-        
-        // 关闭模态框
-        document.getElementById('newDiscussionModal').style.display = 'none';
-        
-        // 清空表单
-        document.getElementById('discussionTitle').value = '';
-        document.getElementById('discussionContent').value = '';
-        
-        // 重新加载讨论区
-        await loadDiscussions();
-        
-        hideLoading();
-        showMessage('话题发布成功', 'success');
-        
-    } catch (error) {
-        hideLoading();
-        console.error('提交讨论错误:', error);
-        showMessage('话题发布失败', 'error');
-    }
-}
-
-// 加载用户资料页面
-async function loadUserProfilePage(userId) {
-    showLoading();
-    
-    try {
-        // 获取用户资料
-        const user = await authManager.getUserById(userId);
-        if (!user) {
-            showMessage('用户不存在', 'error');
-            hideLoading();
-            return;
-        }
-        
-        // 切换到资料页面
-        switchPage('profile');
-        
-        // 更新资料页内容
-        await displayUserProfile(user);
-        
-    } catch (error) {
-        console.error('加载用户资料错误:', error);
-        showMessage('加载用户资料失败', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-// 显示用户资料
-async function displayUserProfile(user) {
-    const profileHeader = document.getElementById('profileHeader');
-    if (!profileHeader) return;
-    
-    // 获取用户的照片
-    const { data: userPhotos, error: photosError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('is_private', false)
-        .order('created_at', { ascending: false });
-    
-    if (photosError) {
-        console.error('获取用户照片错误:', photosError);
-    }
-    
-    // 获取关注者数量
-    const { count: followersCount, error: followersError } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', user.id);
-    
-    // 获取关注数量
-    const { count: followingCount, error: followingError } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', user.id);
-    
-    // 检查当前用户是否已关注此用户
-    let isFollowing = false;
-    if (authManager.isAuthenticated()) {
-        const { data: follow } = await supabase
-            .from('follows')
-            .select('id')
-            .eq('follower_id', authManager.currentUser.id)
-            .eq('following_id', user.id)
-            .single();
-        
-        isFollowing = !!follow;
-    }
-    
-    // 更新资料页头部
-    profileHeader.innerHTML = `
-        <img src="${user.avatar_url}" 
-             alt="${user.username}" 
-             class="profile-avatar"
-             data-user-id="${user.id}">
-        <div class="profile-info">
-            <h2 class="profile-username">${user.username}</h2>
-            <p class="profile-bio">${user.bio || '暂无简介'}</p>
-            <div class="profile-stats">
-                <div>
-                    <span>${userPhotos?.length || 0}</span>
-                    <label>照片</label>
-                </div>
-                <div>
-                    <span>${followersCount || 0}</span>
-                    <label>粉丝</label>
-                </div>
-                <div>
-                    <span>${followingCount || 0}</span>
-                    <label>关注</label>
-                </div>
-            </div>
-            ${authManager.isAuthenticated() && authManager.currentUser.id !== user.id ? `
-                <button class="follow-btn ${isFollowing ? 'btn-secondary' : 'btn-primary'}" 
-                        data-user-id="${user.id}"
-                        style="margin-top: 15px;">
-                    ${isFollowing ? '已关注' : '关注'}
-                </button>
-            ` : ''}
-        </div>
-    `;
-    
-    // 显示用户的照片
-    if (userPhotos) {
-        displayPhotos(userPhotos, 'userPhotosGrid');
-    }
-    
-    // 添加关注按钮事件监听器
-    setTimeout(() => {
-        const followBtn = document.querySelector('.follow-btn');
-        if (followBtn) {
-            followBtn.addEventListener('click', async () => {
-                await toggleFollow(user.id, followBtn);
+    // 更新关键词
+    if (keywordsContainer) {
+        keywordsContainer.innerHTML = '';
+        if (photo.keywords && Array.isArray(photo.keywords)) {
+            photo.keywords.forEach(keyword => {
+                const keywordElement = document.createElement('span');
+                keywordElement.className = 'keyword';
+                keywordElement.textContent = keyword;
+                keywordElement.onclick = () => {
+                    document.getElementById('searchInput').value = keyword;
+                    searchPhotos();
+                    closeModal();
+                };
+                keywordsContainer.appendChild(keywordElement);
             });
         }
-    }, 100);
+    }
 }
 
-// 加载用户点赞的照片
-async function loadUserLikes(userId) {
+/**
+ * 关闭模态框
+ */
+function closeModal() {
+    const modal = document.getElementById('imageModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+    currentPhotoId = null;
+}
+
+// ============================================
+// 点赞功能
+// ============================================
+
+/**
+ * 加载已点赞的照片
+ */
+async function loadLikedPhotos() {
+    if (!currentUser) return;
+    
     try {
         const { data: likes, error } = await supabase
             .from('likes')
-            .select(`
-                photos!inner(*, 
-                    profiles:user_id (
-                        username,
-                        avatar_url
-                    )
-                )
-            `)
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
+            .select('photo_id')
+            .eq('user_id', currentUser.id);
         
-        if (error) throw error;
-        
-        const container = document.getElementById('userLikes');
-        if (!container) return;
-        
-        if (!likes || likes.length === 0) {
-            container.innerHTML = '<p class="no-data">暂无点赞</p>';
-            return;
+        if (!error && likes) {
+            likes.forEach(like => likedPhotos.add(like.photo_id));
         }
-        
-        const photos = likes.map(like => like.photos).filter(photo => !photo.is_private);
-        if (photos.length === 0) {
-            container.innerHTML = '<p class="no-data">暂无公开的点赞照片</p>';
-            return;
-        }
-        
-        container.innerHTML = '<div class="photos-grid" id="userLikesGrid"></div>';
-        displayPhotos(photos, 'userLikesGrid');
-        
     } catch (error) {
-        console.error('加载用户点赞错误:', error);
-        document.getElementById('userLikes').innerHTML = '<p class="no-data">加载失败</p>';
+        console.error('加载点赞失败:', error);
     }
 }
 
-// 加载用户关注的人
-async function loadUserFollowing(userId) {
+/**
+ * 更新点赞按钮状态
+ * @param {HTMLElement} button - 点赞按钮
+ * @param {string} photoId - 照片ID
+ */
+function updateLikeButton(button, photoId) {
+    if (!button) return;
+    
+    const likeCount = button.querySelector('#likeCount') || button;
+    
+    if (likedPhotos.has(photoId)) {
+        button.innerHTML = '<i class="fas fa-heart"></i> <span id="likeCount">已点赞</span>';
+        button.classList.add('liked');
+    } else {
+        button.innerHTML = '<i class="far fa-heart"></i> <span id="likeCount">点赞</span>';
+        button.classList.remove('liked');
+    }
+}
+
+/**
+ * 点赞/取消点赞
+ */
+async function toggleLike() {
+    if (!currentUser) {
+        showNotification('请先登录', 'info');
+        return;
+    }
+    
+    if (!currentPhotoId) return;
+    
+    const likeBtn = document.getElementById('likeBtn');
+    const likeCount = document.getElementById('likeCount');
+    
+    if (!likeBtn || !likeCount) return;
+    
+    let currentCount = parseInt(likeCount.textContent) || 0;
+    
     try {
-        const { data: follows, error } = await supabase
-            .from('follows')
-            .select(`
-                profiles!following_id(*)
-            `)
-            .eq('follower_id', userId)
-            .order('created_at', { ascending: false });
+        if (likedPhotos.has(currentPhotoId)) {
+            // 取消点赞
+            const { error } = await supabase
+                .from('likes')
+                .delete()
+                .eq('user_id', currentUser.id)
+                .eq('photo_id', currentPhotoId);
+            
+            if (error) throw error;
+            
+            likedPhotos.delete(currentPhotoId);
+            currentCount--;
+            
+            // 更新照片的点赞数
+            await supabase
+                .from('photos')
+                .update({ likes_count: currentCount })
+                .eq('id', currentPhotoId);
+            
+            updateLikeButton(likeBtn, currentPhotoId);
+            showNotification('已取消点赞', 'success');
+        } else {
+            // 点赞
+            const { error } = await supabase
+                .from('likes')
+                .insert({
+                    user_id: currentUser.id,
+                    photo_id: currentPhotoId
+                });
+            
+            if (error) throw error;
+            
+            likedPhotos.add(currentPhotoId);
+            currentCount++;
+            
+            // 更新照片的点赞数
+            await supabase
+                .from('photos')
+                .update({ likes_count: currentCount })
+                .eq('id', currentPhotoId);
+            
+            updateLikeButton(likeBtn, currentPhotoId);
+            showNotification('点赞成功', 'success');
+        }
+        
+        likeCount.textContent = currentCount;
+        
+        // 更新照片卡片上的点赞数
+        updatePhotoCardLikeCount(currentPhotoId, currentCount);
+    } catch (error) {
+        console.error('点赞操作失败:', error);
+        showNotification('操作失败，请重试', 'error');
+    }
+}
+
+/**
+ * 快速点赞（在照片卡片上）
+ * @param {string} photoId - 照片ID
+ */
+async function quickLikePhoto(photoId) {
+    if (!currentUser) {
+        showNotification('请先登录', 'info');
+        return;
+    }
+    
+    try {
+        if (likedPhotos.has(photoId)) {
+            // 取消点赞
+            const { error } = await supabase
+                .from('likes')
+                .delete()
+                .eq('user_id', currentUser.id)
+                .eq('photo_id', photoId);
+            
+            if (error) throw error;
+            
+            likedPhotos.delete(photoId);
+            
+            // 获取当前点赞数
+            const { data: photo } = await supabase
+                .from('photos')
+                .select('likes_count')
+                .eq('id', photoId)
+                .single();
+            
+            const newCount = (photo?.likes_count || 1) - 1;
+            
+            // 更新照片的点赞数
+            await supabase
+                .from('photos')
+                .update({ likes_count: newCount })
+                .eq('id', photoId);
+            
+            updatePhotoCardLikeCount(photoId, newCount);
+        } else {
+            // 点赞
+            const { error } = await supabase
+                .from('likes')
+                .insert({
+                    user_id: currentUser.id,
+                    photo_id: photoId
+                });
+            
+            if (error) throw error;
+            
+            likedPhotos.add(photoId);
+            
+            // 获取当前点赞数
+            const { data: photo } = await supabase
+                .from('photos')
+                .select('likes_count')
+                .eq('id', photoId)
+                .single();
+            
+            const newCount = (photo?.likes_count || 0) + 1;
+            
+            // 更新照片的点赞数
+            await supabase
+                .from('photos')
+                .update({ likes_count: newCount })
+                .eq('id', photoId);
+            
+            updatePhotoCardLikeCount(photoId, newCount);
+        }
+    } catch (error) {
+        console.error('快速点赞失败:', error);
+    }
+}
+
+/**
+ * 更新照片卡片的点赞数
+ * @param {string} photoId - 照片ID
+ * @param {number} count - 新的点赞数
+ */
+function updatePhotoCardLikeCount(photoId, count) {
+    const photoCard = document.querySelector(`.photo-card[data-id="${photoId}"]`);
+    if (photoCard) {
+        const likeCountElement = photoCard.querySelector('.photo-stats span:first-child');
+        if (likeCountElement) {
+            likeCountElement.innerHTML = `<i class="fas fa-heart"></i> ${count}`;
+        }
+        
+        // 更新快速点赞按钮
+        const quickLikeBtn = photoCard.querySelector('.quick-like-btn');
+        if (quickLikeBtn) {
+            quickLikeBtn.innerHTML = `<i class="${likedPhotos.has(photoId) ? 'fas' : 'far'} fa-heart"></i>`;
+        }
+    }
+}
+
+// ============================================
+// 评论功能
+// ============================================
+
+/**
+ * 加载评论
+ * @param {string} photoId - 照片ID
+ */
+async function loadComments(photoId) {
+    const commentsList = document.getElementById('commentsList');
+    const commentsCount = document.getElementById('commentsCount');
+    
+    if (!commentsList) return;
+    
+    commentsList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+    
+    try {
+        const { data: comments, error } = await supabase
+            .from('comments')
+            .select('*')
+            .eq('photo_id', photoId)
+            .order('created_at', { ascending: true });
         
         if (error) throw error;
         
-        const container = document.getElementById('userFollowing');
-        if (!container) return;
+        commentsList.innerHTML = '';
         
-        if (!follows || follows.length === 0) {
-            container.innerHTML = '<p class="no-data">暂无关注</p>';
-            return;
+        if (comments && comments.length > 0) {
+            comments.forEach(comment => {
+                const commentElement = createCommentElement(comment);
+                commentsList.appendChild(commentElement);
+            });
+            if (commentsCount) commentsCount.textContent = comments.length;
+        } else {
+            commentsList.innerHTML = '<p class="no-comments">还没有评论，快来第一个评论吧！</p>';
+            if (commentsCount) commentsCount.textContent = '0';
         }
-        
-        const users = follows.map(follow => follow.profiles);
-        container.innerHTML = users.map(user => `
-            <div class="user-list-item" onclick="loadUserProfilePage('${user.id}')">
-                <img src="${user.avatar_url}" alt="${user.username}" class="user-list-avatar">
-                <div class="user-list-info">
-                    <h4>${user.username}</h4>
-                    <p>${user.bio || '暂无简介'}</p>
-                </div>
+    } catch (error) {
+        console.error('加载评论失败:', error);
+        commentsList.innerHTML = '<p>加载评论失败</p>';
+    }
+}
+
+/**
+ * 创建评论元素
+ * @param {Object} comment - 评论对象
+ * @returns {HTMLElement} 评论元素
+ */
+function createCommentElement(comment) {
+    const div = document.createElement('div');
+    div.className = 'comment-item';
+    div.dataset.id = comment.id;
+    
+    const formattedDate = new Date(comment.created_at).toLocaleDateString('zh-CN', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    div.innerHTML = `
+        <img src="${comment.user_avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(comment.username) + '&background=random'}" 
+             class="avatar-sm" alt="${comment.username}"
+             onclick="goToUserProfile('${comment.user_id}')">
+        <div class="comment-content">
+            <div class="comment-header">
+                <span class="comment-username" onclick="goToUserProfile('${comment.user_id}')">
+                    ${comment.username}
+                </span>
+                <span class="comment-time">${formattedDate}</span>
+                ${currentUser && (comment.user_id === currentUser.id || currentUser.id === ADMIN_ID) ? 
+                    `<button class="delete-comment-btn" onclick="deleteComment('${comment.id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>` : ''
+                }
             </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载用户关注错误:', error);
-        document.getElementById('userFollowing').innerHTML = '<p class="no-data">加载失败</p>';
-    }
+            <p>${comment.content}</p>
+        </div>
+    `;
+    
+    return div;
 }
 
-// 加载用户的粉丝
-async function loadUserFollowers(userId) {
-    try {
-        const { data: followers, error } = await supabase
-            .from('follows')
-            .select(`
-                profiles!follower_id(*)
-            `)
-            .eq('following_id', userId)
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        const container = document.getElementById('userFollowers');
-        if (!container) return;
-        
-        if (!followers || followers.length === 0) {
-            container.innerHTML = '<p class="no-data">暂无粉丝</p>';
-            return;
-        }
-        
-        const users = followers.map(follower => follower.profiles);
-        container.innerHTML = users.map(user => `
-            <div class="user-list-item" onclick="loadUserProfilePage('${user.id}')">
-                <img src="${user.avatar_url}" alt="${user.username}" class="user-list-avatar">
-                <div class="user-list-info">
-                    <h4>${user.username}</h4>
-                    <p>${user.bio || '暂无简介'}</p>
-                </div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载用户粉丝错误:', error);
-        document.getElementById('userFollowers').innerHTML = '<p class="no-data">加载失败</p>';
+/**
+ * 添加评论
+ */
+async function addComment() {
+    if (!currentUser) {
+        showNotification('请先登录', 'info');
+        return;
     }
-}
-
-// 加载用户的照片
-async function loadUserPhotos(userId) {
+    
+    if (!currentPhotoId) return;
+    
+    const commentInput = document.getElementById('commentInput');
+    if (!commentInput) return;
+    
+    const content = commentInput.value.trim();
+    
+    if (!content) {
+        showNotification('评论内容不能为空', 'error');
+        return;
+    }
+    
+    if (content.length > 500) {
+        showNotification('评论内容不能超过500字', 'error');
+        return;
+    }
+    
     try {
-        const { data: photos, error } = await supabase
+        // 获取当前照片信息以更新评论数
+        const { data: photo } = await supabase
             .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq('user_id', userId)
-            .eq('is_private', false)
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        const container = document.getElementById('userPhotosGrid');
-        if (!container) return;
-        
-        if (!photos || photos.length === 0) {
-            container.innerHTML = '<p class="no-data">暂无照片</p>';
-            return;
-        }
-        
-        displayPhotos(photos, 'userPhotosGrid');
-        
-    } catch (error) {
-        console.error('加载用户照片错误:', error);
-        document.getElementById('userPhotosGrid').innerHTML = '<p class="no-data">加载失败</p>';
-    }
-}
-
-// 关注/取消关注
-async function toggleFollow(userId, followBtn) {
-    try {
-        // 检查是否已经关注
-        const { data: existingFollow } = await supabase
-            .from('follows')
-            .select('id')
-            .eq('follower_id', authManager.currentUser.id)
-            .eq('following_id', userId)
+            .select('comments_count')
+            .eq('id', currentPhotoId)
             .single();
         
-        if (existingFollow) {
-            // 取消关注
-            await supabase
-                .from('follows')
-                .delete()
-                .eq('id', existingFollow.id);
-            
-            // 更新按钮状态
-            followBtn.classList.remove('btn-secondary');
-            followBtn.classList.add('btn-primary');
-            followBtn.textContent = '关注';
-            
-            showMessage('已取消关注', 'success');
-            
-        } else {
-            // 关注
-            await supabase
-                .from('follows')
-                .insert([{
-                    follower_id: authManager.currentUser.id,
-                    following_id: userId
-                }]);
-            
-            // 更新按钮状态
-            followBtn.classList.remove('btn-primary');
-            followBtn.classList.add('btn-secondary');
-            followBtn.textContent = '已关注';
-            
-            showMessage('关注成功', 'success');
-        }
-        
-    } catch (error) {
-        console.error('关注操作错误:', error);
-        showMessage('操作失败，请重试', 'error');
-    }
-}
-
-// 打开设置模态框
-function openSettingsModal() {
-    const user = authManager.getCurrentUser();
-    if (!user || !user.profile) {
-        showMessage('请先登录', 'error');
-        return;
-    }
-    
-    const modal = document.getElementById('settingsModal');
-    if (modal) {
-        // 填充当前设置
-        document.getElementById('settingsAvatar').src = user.profile.avatar_url;
-        document.getElementById('settingsUsername').value = user.profile.username || '';
-        document.getElementById('settingsBio').value = user.profile.bio || '';
-        
-        modal.style.display = 'block';
-    }
-}
-
-// 保存设置
-async function saveSettings() {
-    const username = document.getElementById('settingsUsername').value.trim();
-    const bio = document.getElementById('settingsBio').value.trim();
-    
-    if (!username) {
-        showMessage('用户名不能为空', 'error');
-        return;
-    }
-    
-    const updates = {
-        username: username,
-        bio: bio,
-        updated_at: new Date().toISOString()
-    };
-    
-    const success = await authManager.updateProfile(updates);
-    if (success) {
-        // 关闭模态框
-        document.getElementById('settingsModal').style.display = 'none';
-        
-        // 更新UI
-        authManager.updateUIForLoggedInUser();
-    }
-}
-
-// 打开管理面板
-function openAdminPanel() {
-    if (!authManager.isAdmin) {
-        showMessage('您没有管理员权限', 'error');
-        return;
-    }
-    
-    // 切换到管理面板
-    switchPage('admin');
-    
-    // 加载管理数据
-    loadAdminStats();
-    loadAdminPhotos();
-}
-
-// 管理员功能
-async function loadAdminStats() {
-    try {
-        // 获取总用户数
-        const { count: totalUsers, error: usersError } = await supabase
-            .from('profiles')
-            .select('*', { count: 'exact', head: true });
-        
-        // 获取总照片数
-        const { count: totalPhotos, error: photosError } = await supabase
-            .from('photos')
-            .select('*', { count: 'exact', head: true });
-        
-        // 获取总评论数
-        const { count: totalComments, error: commentsError } = await supabase
+        // 添加评论
+        const { data: comment, error } = await supabase
             .from('comments')
-            .select('*', { count: 'exact', head: true });
+            .insert({
+                user_id: currentUser.id,
+                photo_id: currentPhotoId,
+                content: content,
+                username: currentUser.user_metadata?.name || currentUser.email.split('@')[0],
+                user_avatar: currentUser.user_metadata?.avatar_url
+            })
+            .select()
+            .single();
         
-        // 更新统计显示
-        document.getElementById('totalUsers').textContent = totalUsers || 0;
-        document.getElementById('totalPhotos').textContent = totalPhotos || 0;
-        document.getElementById('totalComments').textContent = totalComments || 0;
+        if (error) throw error;
         
-    } catch (error) {
-        console.error('加载管理统计错误:', error);
-    }
-}
-
-async function loadAdminPhotos(searchQuery = '') {
-    try {
-        let query = supabase
+        // 更新照片的评论数
+        const newCount = (photo?.comments_count || 0) + 1;
+        await supabase
             .from('photos')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                )
-            `)
-            .order('created_at', { ascending: false });
+            .update({ comments_count: newCount })
+            .eq('id', currentPhotoId);
         
-        if (searchQuery) {
-            query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        // 添加评论到列表
+        const commentsList = document.getElementById('commentsList');
+        const commentsCount = document.getElementById('commentsCount');
+        
+        if (commentsList) {
+            // 移除"没有评论"的提示
+            const noCommentsMsg = commentsList.querySelector('.no-comments');
+            if (noCommentsMsg) {
+                noCommentsMsg.remove();
+            }
+            
+            const commentElement = createCommentElement(comment);
+            commentsList.appendChild(commentElement);
+            
+            // 滚动到底部
+            commentsList.scrollTop = commentsList.scrollHeight;
         }
         
-        const { data: photos, error } = await query;
-        
-        if (error) throw error;
-        
-        const photosList = document.getElementById('adminPhotosList');
-        if (!photosList) return;
-        
-        if (!photos || photos.length === 0) {
-            photosList.innerHTML = '<p class="no-data">暂无照片</p>';
-            return;
+        if (commentsCount) {
+            commentsCount.textContent = newCount;
         }
         
-        photosList.innerHTML = photos.map(photo => `
-            <div class="admin-item">
-                <div class="admin-item-info">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                        <img src="${photo.image_url}" alt="${photo.title}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px;">
-                        <div>
-                            <strong>${photo.title || '未命名照片'}</strong>
-                            <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                                作者: ${photo.profiles.username}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                        时间: ${new Date(photo.created_at).toLocaleDateString('zh-CN')}
-                        | 浏览: ${photo.views_count || 0}
-                        | 点赞: ${photo.likes_count || 0}
-                        | 评论: ${photo.comments_count || 0}
-                        ${photo.is_private ? '| <span style="color: var(--error-color);">私密</span>' : ''}
-                    </div>
-                </div>
-                <div class="admin-item-actions">
-                    <button class="btn-danger" onclick="deletePhotoAsAdmin('${photo.id}', '${photo.cloudinary_id}')">
-                        删除
-                    </button>
-                    ${photo.is_private ? `
-                    <button class="btn-secondary btn-small" onclick="togglePhotoPrivacy('${photo.id}', false)">
-                        设为公开
-                    </button>
-                    ` : `
-                    <button class="btn-secondary btn-small" onclick="togglePhotoPrivacy('${photo.id}', true)">
-                        设为私密
-                    </button>
-                    `}
-                </div>
-            </div>
-        `).join('');
+        // 更新照片卡片的评论数
+        updatePhotoCardCommentCount(currentPhotoId, newCount);
         
+        // 清空输入框
+        commentInput.value = '';
+        showNotification('评论成功', 'success');
     } catch (error) {
-        console.error('加载管理照片错误:', error);
-        document.getElementById('adminPhotosList').innerHTML = '<p class="no-data">加载失败</p>';
+        console.error('评论失败:', error);
+        showNotification('评论失败，请重试', 'error');
     }
 }
 
-async function loadAdminUsers(searchQuery = '') {
-    try {
-        let query = supabase
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (searchQuery) {
-            query = query.or(`username.ilike.%${searchQuery}%,full_name.ilike.%${searchQuery}%`);
-        }
-        
-        const { data: users, error } = await query;
-        
-        if (error) throw error;
-        
-        const usersList = document.getElementById('adminUsersList');
-        if (!usersList) return;
-        
-        if (!users || users.length === 0) {
-            usersList.innerHTML = '<p class="no-data">暂无用户</p>';
-            return;
-        }
-        
-        usersList.innerHTML = users.map(user => `
-            <div class="admin-item">
-                <div class="admin-item-info">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                        <img src="${user.avatar_url}" alt="${user.username}" style="width: 40px; height: 40px; border-radius: 50%;">
-                        <div>
-                            <strong>${user.username}</strong>
-                            <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                                ${user.full_name || '未设置姓名'}
-                                ${user.is_admin ? ' | <span style="color: var(--primary-color);">管理员</span>' : ''}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                        注册时间: ${new Date(user.created_at).toLocaleDateString('zh-CN')}
-                        | 简介: ${user.bio || '无'}
-                    </div>
-                </div>
-                <div class="admin-item-actions">
-                    <button class="btn-danger" onclick="deleteUserAsAdmin('${user.id}')">
-                        删除用户
-                    </button>
-                    ${!user.is_admin ? `
-                    <button class="btn-secondary btn-small" onclick="toggleAdminStatus('${user.id}', true)">
-                        设为管理员
-                    </button>
-                    ` : `
-                    <button class="btn-secondary btn-small" onclick="toggleAdminStatus('${user.id}', false)">
-                        取消管理员
-                    </button>
-                    `}
-                </div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载管理用户错误:', error);
-        document.getElementById('adminUsersList').innerHTML = '<p class="no-data">加载失败</p>';
+/**
+ * 删除评论
+ * @param {string} commentId - 评论ID
+ */
+async function deleteComment(commentId) {
+    if (!confirm('确定要删除这条评论吗？')) {
+        return;
     }
-}
-
-async function loadAdminComments(searchQuery = '') {
+    
     try {
-        let query = supabase
+        // 获取评论信息
+        const { data: comment } = await supabase
             .from('comments')
-            .select(`
-                *,
-                profiles:user_id (
-                    username,
-                    avatar_url
-                ),
-                photos:photo_id (
-                    title,
-                    image_url
-                )
-            `)
-            .order('created_at', { ascending: false });
+            .select('photo_id')
+            .eq('id', commentId)
+            .single();
         
-        if (searchQuery) {
-            query = query.or(`content.ilike.%${searchQuery}%`);
-        }
+        if (!comment) return;
         
-        const { data: comments, error } = await query;
-        
-        if (error) throw error;
-        
-        const commentsList = document.getElementById('adminCommentsList');
-        if (!commentsList) return;
-        
-        if (!comments || comments.length === 0) {
-            commentsList.innerHTML = '<p class="no-data">暂无评论</p>';
-            return;
-        }
-        
-        commentsList.innerHTML = comments.map(comment => `
-            <div class="admin-item">
-                <div class="admin-item-info">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                        <img src="${comment.profiles.avatar_url}" alt="${comment.profiles.username}" style="width: 40px; height: 40px; border-radius: 50%;">
-                        <div>
-                            <strong>${comment.profiles.username}</strong>
-                            <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                                评论于: ${comment.photos.title || '未命名照片'}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 5px;">
-                        时间: ${new Date(comment.created_at).toLocaleDateString('zh-CN')}
-                    </div>
-                    <div style="background: var(--dark-bg); padding: 10px; border-radius: 5px;">
-                        ${comment.content}
-                    </div>
-                </div>
-                <div class="admin-item-actions">
-                    <button class="btn-danger" onclick="deleteCommentAsAdmin('${comment.id}')">
-                        删除评论
-                    </button>
-                </div>
-            </div>
-        `).join('');
-        
-    } catch (error) {
-        console.error('加载管理评论错误:', error);
-        document.getElementById('adminCommentsList').innerHTML = '<p class="no-data">加载失败</p>';
-    }
-}
-
-async function deletePhotoAsAdmin(photoId, cloudinaryId) {
-    if (!confirm('确定要删除这张照片吗？此操作不可撤销。')) {
-        return;
-    }
-    
-    showLoading();
-    
-    try {
-        const success = await uploadManager.deletePhoto(photoId, cloudinaryId);
-        
-        if (success) {
-            showMessage('照片删除成功', 'success');
-            await loadAdminPhotos(); // 重新加载列表
-        } else {
-            showMessage('照片删除失败', 'error');
-        }
-    } catch (error) {
-        console.error('管理员删除照片错误:', error);
-        showMessage('删除失败: ' + error.message, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function togglePhotoPrivacy(photoId, makePrivate) {
-    showLoading();
-    
-    try {
-        const { error } = await supabase
-            .from('photos')
-            .update({ 
-                is_private: makePrivate,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', photoId);
-        
-        if (error) throw error;
-        
-        showMessage(`照片已${makePrivate ? '设为私密' : '设为公开'}`, 'success');
-        await loadAdminPhotos(); // 重新加载列表
-    } catch (error) {
-        console.error('更改照片隐私设置错误:', error);
-        showMessage('操作失败', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function deleteUserAsAdmin(userId) {
-    if (!confirm('确定要删除这个用户吗？此操作将删除用户的所有照片、评论、关注记录，且不可撤销。')) {
-        return;
-    }
-    
-    showLoading();
-    
-    try {
-        // 注意：由于外键约束，删除用户会自动删除其相关的照片、评论、关注等
-        const { error } = await supabase.auth.admin.deleteUser(userId);
-        
-        if (error) throw error;
-        
-        showMessage('用户删除成功', 'success');
-        await loadAdminUsers(); // 重新加载列表
-    } catch (error) {
-        console.error('管理员删除用户错误:', error);
-        showMessage('删除失败: ' + error.message, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function toggleAdminStatus(userId, makeAdmin) {
-    showLoading();
-    
-    try {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ 
-                is_admin: makeAdmin,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', userId);
-        
-        if (error) throw error;
-        
-        showMessage(`用户已${makeAdmin ? '设为管理员' : '取消管理员权限'}`, 'success');
-        await loadAdminUsers(); // 重新加载列表
-    } catch (error) {
-        console.error('更改用户管理员状态错误:', error);
-        showMessage('操作失败', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function deleteCommentAsAdmin(commentId) {
-    if (!confirm('确定要删除这条评论吗？此操作不可撤销。')) {
-        return;
-    }
-    
-    showLoading();
-    
-    try {
+        // 删除评论
         const { error } = await supabase
             .from('comments')
             .delete()
@@ -1953,35 +1066,1008 @@ async function deleteCommentAsAdmin(commentId) {
         
         if (error) throw error;
         
-        showMessage('评论删除成功', 'success');
-        await loadAdminComments(); // 重新加载列表
+        // 更新照片的评论数
+        const { data: photo } = await supabase
+            .from('photos')
+            .select('comments_count')
+            .eq('id', comment.photo_id)
+            .single();
+        
+        if (photo) {
+            const newCount = Math.max(0, (photo.comments_count || 1) - 1);
+            await supabase
+                .from('photos')
+                .update({ comments_count: newCount })
+                .eq('id', comment.photo_id);
+            
+            // 更新评论数显示
+            const commentsCount = document.getElementById('commentsCount');
+            if (commentsCount) commentsCount.textContent = newCount;
+            
+            // 更新照片卡片的评论数
+            updatePhotoCardCommentCount(comment.photo_id, newCount);
+        }
+        
+        // 从DOM中移除评论
+        const commentElement = document.querySelector(`.comment-item[data-id="${commentId}"]`);
+        if (commentElement) {
+            commentElement.remove();
+        }
+        
+        showNotification('评论已删除', 'success');
     } catch (error) {
-        console.error('管理员删除评论错误:', error);
-        showMessage('删除失败: ' + error.message, 'error');
-    } finally {
-        hideLoading();
+        console.error('删除评论失败:', error);
+        showNotification('删除失败，请重试', 'error');
     }
 }
 
-// 加载照片
-async function loadPhotos() {
-    // 重新加载首页数据
-    if (currentPage === 'home') {
-        await loadHomeData();
-    } else if (currentPage === 'explore') {
-        await loadExplorePhotos();
+/**
+ * 更新照片卡片的评论数
+ * @param {string} photoId - 照片ID
+ * @param {number} count - 新的评论数
+ */
+function updatePhotoCardCommentCount(photoId, count) {
+    const photoCard = document.querySelector(`.photo-card[data-id="${photoId}"]`);
+    if (photoCard) {
+        const commentCountElement = photoCard.querySelector('.photo-stats span:nth-child(2)');
+        if (commentCountElement) {
+            commentCountElement.innerHTML = `<i class="fas fa-comment"></i> ${count}`;
+        }
     }
 }
 
-// 暴露全局函数
-window.switchPage = switchPage;
-window.openImageViewer = openImageViewer;
-window.loadUserProfilePage = loadUserProfilePage;
-window.openSettingsModal = openSettingsModal;
-window.performSearch = performSearch;
-window.openAdminPanel = openAdminPanel;
-window.deletePhotoAsAdmin = deletePhotoAsAdmin;
+// ============================================
+// 关注功能
+// ============================================
+
+/**
+ * 加载用户关注关系
+ */
+async function loadUserFollows() {
+    if (!currentUser) return;
+    
+    try {
+        const { data: follows, error } = await supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', currentUser.id);
+        
+        if (!error && follows) {
+            follows.forEach(follow => userFollows.add(follow.following_id));
+        }
+    } catch (error) {
+        console.error('加载关注失败:', error);
+    }
+}
+
+/**
+ * 获取关注用户的ID列表
+ * @returns {Promise<Array>} 关注用户ID数组
+ */
+async function getFollowingUserIds() {
+    if (!currentUser) return [];
+    
+    try {
+        const { data: follows, error } = await supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', currentUser.id);
+        
+        if (error) throw error;
+        
+        return follows ? follows.map(f => f.following_id) : [];
+    } catch (error) {
+        console.error('获取关注用户失败:', error);
+        return [];
+    }
+}
+
+/**
+ * 打开关注用户模态框
+ */
+function openFollowModal() {
+    const modal = document.getElementById('followModal');
+    if (modal) {
+        modal.style.display = 'block';
+        searchUsers('');
+    }
+}
+
+/**
+ * 关闭关注用户模态框
+ */
+function closeFollowModal() {
+    const modal = document.getElementById('followModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * 搜索用户
+ * @param {string} query - 搜索关键词
+ */
+async function searchUsers(query) {
+    const usersList = document.getElementById('usersList');
+    if (!usersList) return;
+    
+    usersList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>加载中...</p></div>';
+    
+    try {
+        let users = [];
+        
+        if (!query) {
+            // 显示热门用户（按照片数量排序）
+            const { data: userPhotos, error } = await supabase
+                .from('photos')
+                .select('user_id, username, user_avatar, count')
+                .eq('is_private', false)
+                .order('count', { ascending: false, foreignTable: 'photos' })
+                .limit(20);
+            
+            if (error) throw error;
+            
+            // 去重并统计照片数量
+            const userMap = new Map();
+            userPhotos?.forEach(photo => {
+                if (!userMap.has(photo.user_id)) {
+                    userMap.set(photo.user_id, {
+                        id: photo.user_id,
+                        username: photo.username,
+                        avatar: photo.user_avatar,
+                        photoCount: 1
+                    });
+                } else {
+                    userMap.get(photo.user_id).photoCount++;
+                }
+            });
+            
+            users = Array.from(userMap.values());
+        } else {
+            // 搜索用户
+            const { data: photos, error } = await supabase
+                .from('photos')
+                .select('user_id, username, user_avatar')
+                .ilike('username', `%${query}%`)
+                .limit(20);
+            
+            if (error) throw error;
+            
+            // 去重
+            const uniqueUsers = [];
+            const seen = new Set();
+            
+            photos?.forEach(photo => {
+                if (!seen.has(photo.user_id)) {
+                    seen.add(photo.user_id);
+                    uniqueUsers.push({
+                        id: photo.user_id,
+                        username: photo.username,
+                        avatar: photo.user_avatar,
+                        photoCount: 1
+                    });
+                }
+            });
+            
+            users = uniqueUsers;
+        }
+        
+        displayUsers(users);
+    } catch (error) {
+        console.error('搜索用户失败:', error);
+        usersList.innerHTML = '<p>搜索失败，请重试</p>';
+    }
+}
+
+/**
+ * 显示用户列表
+ * @param {Array} users - 用户数组
+ */
+function displayUsers(users) {
+    const usersList = document.getElementById('usersList');
+    if (!usersList) return;
+    
+    usersList.innerHTML = '';
+    
+    if (users.length === 0) {
+        usersList.innerHTML = '<p class="no-users">没有找到用户</p>';
+        return;
+    }
+    
+    users.forEach(user => {
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item';
+        
+        const isFollowing = userFollows.has(user.id);
+        const isCurrentUser = currentUser && user.id === currentUser.id;
+        
+        userItem.innerHTML = `
+            <img src="${user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=random'}" 
+                 class="avatar-md" alt="${user.username}"
+                 onclick="goToUserProfile('${user.id}')">
+            <div class="user-info">
+                <h4 onclick="goToUserProfile('${user.id}')">${user.username}</h4>
+                <p>${user.photoCount || 0} 张照片</p>
+            </div>
+            ${!isCurrentUser ? `
+                <button class="follow-btn ${isFollowing ? 'following' : ''}" 
+                        onclick="toggleFollow('${user.id}', this)">
+                    ${isFollowing ? '已关注' : '关注'}
+                </button>
+            ` : ''}
+        `;
+        
+        usersList.appendChild(userItem);
+    });
+}
+
+/**
+ * 关注/取消关注用户
+ * @param {string} userId - 用户ID
+ * @param {HTMLElement} button - 关注按钮
+ */
+async function toggleFollow(userId, button) {
+    if (!currentUser) {
+        showNotification('请先登录', 'info');
+        return;
+    }
+    
+    if (currentUser.id === userId) {
+        showNotification('不能关注自己', 'error');
+        return;
+    }
+    
+    try {
+        if (userFollows.has(userId)) {
+            // 取消关注
+            const { error } = await supabase
+                .from('follows')
+                .delete()
+                .eq('follower_id', currentUser.id)
+                .eq('following_id', userId);
+            
+            if (error) throw error;
+            
+            userFollows.delete(userId);
+            button.textContent = '关注';
+            button.classList.remove('following');
+            showNotification('已取消关注', 'success');
+        } else {
+            // 关注
+            const { error } = await supabase
+                .from('follows')
+                .insert({
+                    follower_id: currentUser.id,
+                    following_id: userId
+                });
+            
+            if (error) throw error;
+            
+            userFollows.add(userId);
+            button.textContent = '已关注';
+            button.classList.add('following');
+            showNotification('关注成功', 'success');
+        }
+        
+        // 如果当前正在查看关注内容，重新加载
+        if (currentFilter === 'following') {
+            loadPhotos('following', true);
+        }
+    } catch (error) {
+        console.error('关注操作失败:', error);
+        showNotification('操作失败，请重试', 'error');
+    }
+}
+
+// ============================================
+// 用户主页相关
+// ============================================
+
+/**
+ * 跳转到用户主页
+ * @param {string} userId - 用户ID
+ */
+function goToUserProfile(userId) {
+    window.location.href = `profile.html?user=${userId}`;
+}
+
+// ============================================
+// 照片管理功能
+// ============================================
+
+/**
+ * 删除照片
+ * @param {string} photoId - 照片ID
+ * @param {boolean} isAdmin - 是否为管理员操作
+ */
+async function deletePhoto(photoId, isAdmin = false) {
+    if (!confirm('确定要删除这张照片吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    try {
+        // 检查权限
+        if (!isAdmin) {
+            const { data: photo } = await supabase
+                .from('photos')
+                .select('user_id')
+                .eq('id', photoId)
+                .single();
+            
+            if (!photo || photo.user_id !== currentUser.id) {
+                showNotification('无权删除此照片', 'error');
+                return;
+            }
+        }
+        
+        // 删除照片
+        const { error } = await supabase
+            .from('photos')
+            .delete()
+            .eq('id', photoId);
+        
+        if (error) throw error;
+        
+        showNotification('删除成功', 'success');
+        closeModal();
+        loadPhotos(currentFilter, true);
+    } catch (error) {
+        console.error('删除照片失败:', error);
+        showNotification('删除失败，请重试', 'error');
+    }
+}
+
+/**
+ * 切换照片隐私状态
+ * @param {string} photoId - 照片ID
+ * @param {boolean} isPrivate - 当前隐私状态
+ */
+async function togglePhotoPrivacy(photoId, isPrivate) {
+    try {
+        const { error } = await supabase
+            .from('photos')
+            .update({ is_private: !isPrivate })
+            .eq('id', photoId);
+        
+        if (error) throw error;
+        
+        showNotification(`照片已${!isPrivate ? '设为私密' : '设为公开'}`, 'success');
+        
+        // 重新加载照片
+        setTimeout(() => {
+            if (currentFilter === 'following') {
+                loadPhotos('following', true);
+            } else {
+                // 更新当前照片卡片
+                const photoCard = document.querySelector(`.photo-card[data-id="${photoId}"]`);
+                if (photoCard) {
+                    const privacyBtn = photoCard.querySelector('.photo-privacy-btn');
+                    if (privacyBtn) {
+                        privacyBtn.innerHTML = `<i class="fas fa-${!isPrivate ? 'lock' : 'lock-open'}"></i>`;
+                    }
+                    
+                    const privacyBadge = photoCard.querySelector('.photo-stats span:last-child');
+                    if (!isPrivate) {
+                        if (!privacyBadge || !privacyBadge.innerHTML.includes('私密')) {
+                            const privacySpan = document.createElement('span');
+                            privacySpan.innerHTML = '<i class="fas fa-lock"></i> 私密';
+                            photoCard.querySelector('.photo-stats').appendChild(privacySpan);
+                        }
+                    } else if (privacyBadge && privacyBadge.innerHTML.includes('私密')) {
+                        privacyBadge.remove();
+                    }
+                }
+            }
+        }, 500);
+    } catch (error) {
+        console.error('切换隐私状态失败:', error);
+        showNotification('操作失败，请重试', 'error');
+    }
+}
+
+// ============================================
+// 分享功能
+// ============================================
+
+/**
+ * 分享照片
+ */
+function sharePhoto() {
+    if (!currentPhotoId) return;
+    
+    const shareUrl = `${window.location.origin}?photo=${currentPhotoId}`;
+    const shareText = '我在光影分享发现了一张美丽的照片，快来看看吧！';
+    
+    if (navigator.share) {
+        navigator.share({
+            title: '光影分享 - 发现美好瞬间',
+            text: shareText,
+            url: shareUrl
+        }).catch(err => {
+            console.log('分享取消或失败:', err);
+        });
+    } else {
+        // 复制链接到剪贴板
+        navigator.clipboard.writeText(`${shareText} ${shareUrl}`).then(() => {
+            showNotification('分享链接已复制到剪贴板', 'success');
+        }).catch(err => {
+            // 降级方案
+            const textArea = document.createElement('textarea');
+            textArea.value = `${shareText} ${shareUrl}`;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showNotification('分享链接已复制到剪贴板', 'success');
+        });
+    }
+}
+
+// ============================================
+// 通知系统
+// ============================================
+
+/**
+ * 显示通知
+ * @param {string} message - 通知消息
+ * @param {string} type - 通知类型: success, error, info
+ * @param {number} duration - 显示时长(毫秒)
+ */
+function showNotification(message, type = 'info', duration = 3000) {
+    // 移除现有的通知
+    const existingNotification = document.querySelector('.notification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+    
+    // 创建新的通知
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    if (type === 'error') icon = 'exclamation-circle';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${icon}"></i>
+        <span>${message}</span>
+        <button class="notification-close" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 自动移除
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideInRight 0.3s ease reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }
+    }, duration);
+}
+
+// ============================================
+// 事件监听器设置
+// ============================================
+
+/**
+ * 设置事件监听器
+ */
+function setupEventListeners() {
+    console.log('设置事件监听器...');
+    
+    // 搜索框事件
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        // 输入防抖
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchPhotos();
+            }, 500);
+        });
+        
+        // 回车搜索
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchPhotos();
+            }
+        });
+    }
+    
+    // 退出登录按钮
+    const logoutBtn = document.getElementById('logoutBtn');
+    const mobileLogoutBtn = document.getElementById('mobileLogoutBtn');
+    
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', logout);
+    }
+    if (mobileLogoutBtn) {
+        mobileLogoutBtn.addEventListener('click', logout);
+    }
+    
+    // 模态框点击外部关闭
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        });
+    });
+    
+    // 评论输入框回车事件
+    const commentInput = document.getElementById('commentInput');
+    if (commentInput) {
+        commentInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addComment();
+            }
+        });
+    }
+    
+    // 用户头像点击事件委托
+    document.addEventListener('click', function(e) {
+        // 用户头像点击
+        if (e.target.classList.contains('avatar-sm') || 
+            e.target.classList.contains('avatar-md') ||
+            e.target.classList.contains('photo-username')) {
+            const parent = e.target.closest('[onclick*="goToUserProfile"]');
+            if (parent) {
+                const userId = parent.getAttribute('onclick').match(/'([^']+)'/)[1];
+                goToUserProfile(userId);
+            }
+        }
+    });
+    
+    // 页面可见性变化
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            // 页面重新可见时刷新数据
+            loadPhotos(currentFilter, true);
+        }
+    });
+    
+    console.log('事件监听器设置完成');
+}
+
+// ============================================
+// 键盘快捷键
+// ============================================
+
+/**
+ * 设置键盘快捷键
+ */
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // ESC 关闭模态框
+        if (e.key === 'Escape') {
+            const modals = document.querySelectorAll('.modal');
+            let modalClosed = false;
+            modals.forEach(modal => {
+                if (modal.style.display === 'block') {
+                    modal.style.display = 'none';
+                    document.body.style.overflow = 'auto';
+                    modalClosed = true;
+                }
+            });
+            
+            // 如果关闭了模态框，阻止默认行为
+            if (modalClosed) {
+                e.preventDefault();
+            }
+        }
+        
+        // Ctrl/Cmd + F 聚焦搜索框
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        }
+        
+        // Ctrl/Cmd + U 上传页面
+        if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+            e.preventDefault();
+            if (currentUser) {
+                window.location.href = 'upload.html';
+            } else {
+                showNotification('请先登录', 'info');
+            }
+        }
+        
+        // Ctrl/Cmd + H 返回首页
+        if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+            e.preventDefault();
+            window.location.href = 'index.html';
+        }
+        
+        // Ctrl/Cmd + / 显示帮助
+        if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+            e.preventDefault();
+            showKeyboardShortcutsHelp();
+        }
+    });
+}
+
+/**
+ * 显示键盘快捷键帮助
+ */
+function showKeyboardShortcutsHelp() {
+    const helpHtml = `
+        <div class="keyboard-shortcuts-help">
+            <h3><i class="fas fa-keyboard"></i> 键盘快捷键</h3>
+            <ul>
+                <li><kbd>ESC</kbd> - 关闭模态框</li>
+                <li><kbd>Ctrl/Cmd + F</kbd> - 聚焦搜索框</li>
+                <li><kbd>Ctrl/Cmd + U</kbd> - 上传照片</li>
+                <li><kbd>Ctrl/Cmd + H</kbd> - 返回首页</li>
+                <li><kbd>Ctrl/Cmd + /</kbd> - 显示此帮助</li>
+            </ul>
+        </div>
+    `;
+    
+    showNotification(helpHtml, 'info', 5000);
+}
+
+// ============================================
+// 图片懒加载
+// ============================================
+
+/**
+ * 设置图片懒加载
+ */
+function setupLazyLoading() {
+    if ('IntersectionObserver' in window) {
+        const lazyImages = document.querySelectorAll('img[loading="lazy"]');
+        
+        const imageObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    img.src = img.dataset.src || img.src;
+                    img.classList.add('loaded');
+                    imageObserver.unobserve(img);
+                }
+            });
+        });
+        
+        lazyImages.forEach(img => {
+            if (!img.src && img.dataset.src) {
+                imageObserver.observe(img);
+            }
+        });
+    }
+}
+
+// ============================================
+// 实时更新
+// ============================================
+
+/**
+ * 设置实时更新
+ */
+function setupRealtimeUpdates() {
+    if (realtimeSubscription) {
+        realtimeSubscription.unsubscribe();
+    }
+    
+    // 订阅照片更新
+    realtimeSubscription = supabase
+        .channel('public:photos')
+        .on('postgres_changes', 
+            { event: '*', schema: 'public', table: 'photos' }, 
+            handleRealtimeUpdate
+        )
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'likes' },
+            handleLikeUpdate
+        )
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'comments' },
+            handleCommentUpdate
+        )
+        .subscribe();
+    
+    console.log('实时更新已启用');
+}
+
+/**
+ * 处理实时更新
+ * @param {Object} payload - 更新数据
+ */
+function handleRealtimeUpdate(payload) {
+    console.log('收到实时更新:', payload);
+    
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    switch (eventType) {
+        case 'INSERT':
+            // 新照片上传
+            if (!newRecord.is_private || (currentUser && newRecord.user_id === currentUser.id)) {
+                showNotification(`新照片: ${newRecord.description || '未命名'}`, 'info');
+                // 如果当前在最新或热门页面，重新加载
+                if (currentFilter === 'recent' || currentFilter === 'popular') {
+                    setTimeout(() => loadPhotos(currentFilter, true), 1000);
+                }
+            }
+            break;
+            
+        case 'UPDATE':
+            // 照片更新
+            if (newRecord.id === currentPhotoId) {
+                // 更新模态框中的点赞数和评论数
+                const likeCount = document.getElementById('likeCount');
+                const commentsCount = document.getElementById('commentsCount');
+                
+                if (likeCount && newRecord.likes_count !== undefined) {
+                    likeCount.textContent = newRecord.likes_count;
+                }
+                
+                if (commentsCount && newRecord.comments_count !== undefined) {
+                    commentsCount.textContent = newRecord.comments_count;
+                }
+            }
+            
+            // 更新照片卡片
+            updatePhotoCardStats(newRecord.id, newRecord.likes_count, newRecord.comments_count);
+            break;
+            
+        case 'DELETE':
+            // 照片删除
+            if (oldRecord.id === currentPhotoId) {
+                closeModal();
+            }
+            
+            // 从DOM中移除照片卡片
+            const photoCard = document.querySelector(`.photo-card[data-id="${oldRecord.id}"]`);
+            if (photoCard) {
+                photoCard.remove();
+            }
+            break;
+    }
+}
+
+/**
+ * 处理点赞更新
+ * @param {Object} payload - 更新数据
+ */
+function handleLikeUpdate(payload) {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    if (eventType === 'INSERT' && newRecord.user_id === currentUser?.id) {
+        likedPhotos.add(newRecord.photo_id);
+    } else if (eventType === 'DELETE' && oldRecord.user_id === currentUser?.id) {
+        likedPhotos.delete(oldRecord.photo_id);
+    }
+}
+
+/**
+ * 处理评论更新
+ * @param {Object} payload - 更新数据
+ */
+function handleCommentUpdate(payload) {
+    const { eventType, new: newRecord } = payload;
+    
+    if (eventType === 'INSERT' && newRecord.photo_id === currentPhotoId) {
+        // 新评论添加到当前照片
+        loadComments(currentPhotoId);
+    }
+}
+
+/**
+ * 更新照片卡片统计信息
+ * @param {string} photoId - 照片ID
+ * @param {number} likes - 点赞数
+ * @param {number} comments - 评论数
+ */
+function updatePhotoCardStats(photoId, likes, comments) {
+    const photoCard = document.querySelector(`.photo-card[data-id="${photoId}"]`);
+    if (photoCard) {
+        const likeCountElement = photoCard.querySelector('.photo-stats span:first-child');
+        const commentCountElement = photoCard.querySelector('.photo-stats span:nth-child(2)');
+        
+        if (likeCountElement && likes !== undefined) {
+            likeCountElement.innerHTML = `<i class="fas fa-heart"></i> ${likes}`;
+        }
+        
+        if (commentCountElement && comments !== undefined) {
+            commentCountElement.innerHTML = `<i class="fas fa-comment"></i> ${comments}`;
+        }
+    }
+}
+
+// ============================================
+// 用户界面功能
+// ============================================
+
+/**
+ * 切换移动端菜单
+ */
+function toggleMenu() {
+    const mobileMenu = document.getElementById('mobileMenu');
+    if (mobileMenu) {
+        mobileMenu.classList.toggle('active');
+        
+        // 点击外部关闭菜单
+        if (mobileMenu.classList.contains('active')) {
+            setTimeout(() => {
+                document.addEventListener('click', closeMenuOnClickOutside);
+            }, 10);
+        } else {
+            document.removeEventListener('click', closeMenuOnClickOutside);
+        }
+    }
+}
+
+/**
+ * 点击外部关闭移动端菜单
+ * @param {Event} event - 点击事件
+ */
+function closeMenuOnClickOutside(event) {
+    const mobileMenu = document.getElementById('mobileMenu');
+    const menuToggle = document.querySelector('.menu-toggle');
+    
+    if (mobileMenu && 
+        !mobileMenu.contains(event.target) && 
+        !menuToggle.contains(event.target)) {
+        mobileMenu.classList.remove('active');
+        document.removeEventListener('click', closeMenuOnClickOutside);
+    }
+}
+
+/**
+ * 退出登录
+ */
+async function logout() {
+    try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        
+        currentUser = null;
+        likedPhotos.clear();
+        userFollows.clear();
+        
+        updateUIForGuest();
+        showNotification('已退出登录', 'success');
+        
+        // 重定向到首页
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 1000);
+    } catch (error) {
+        console.error('退出登录失败:', error);
+        showNotification('退出登录失败，请重试', 'error');
+    }
+}
+
+// ============================================
+// 错误处理
+// ============================================
+
+/**
+ * 全局错误处理
+ */
+window.addEventListener('error', function(e) {
+    console.error('全局错误:', e.error);
+    showNotification('发生错误，请刷新页面重试', 'error');
+});
+
+/**
+ * Promise拒绝处理
+ */
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('未处理的Promise拒绝:', e.reason);
+    showNotification('操作失败，请重试', 'error');
+});
+
+// ============================================
+// 网络状态检测
+// ============================================
+
+window.addEventListener('online', function() {
+    showNotification('网络已恢复连接', 'success');
+    // 重新加载数据
+    loadPhotos(currentFilter, true);
+});
+
+window.addEventListener('offline', function() {
+    showNotification('网络连接已断开，部分功能可能不可用', 'error');
+});
+
+// ============================================
+// 页面卸载前清理
+// ============================================
+
+window.addEventListener('beforeunload', function() {
+    // 取消实时订阅
+    if (realtimeSubscription) {
+        supabase.removeChannel(realtimeSubscription);
+    }
+});
+
+// ============================================
+// 辅助函数
+// ============================================
+
+/**
+ * 格式化文件大小
+ * @param {number} bytes - 字节数
+ * @returns {string} 格式化后的文件大小
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * 防抖函数
+ * @param {Function} func - 要防抖的函数
+ * @param {number} delay - 延迟时间(毫秒)
+ * @returns {Function} 防抖后的函数
+ */
+function debounce(func, delay) {
+    let timeoutId;
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
+/**
+ * 节流函数
+ * @param {Function} func - 要节流的函数
+ * @param {number} limit - 限制时间(毫秒)
+ * @returns {Function} 节流后的函数
+ */
+function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+// ============================================
+// 导出函数（如果需要）
+// ============================================
+
+// 将必要的函数导出到全局作用域
+window.loadPhotos = loadPhotos;
+window.searchPhotos = searchPhotos;
+window.openPhotoModal = openPhotoModal;
+window.closeModal = closeModal;
+window.toggleLike = toggleLike;
+window.addComment = addComment;
+window.sharePhoto = sharePhoto;
+window.deletePhoto = deletePhoto;
+window.openFollowModal = openFollowModal;
+window.closeFollowModal = closeFollowModal;
+window.searchUsers = searchUsers;
+window.toggleFollow = toggleFollow;
+window.goToUserProfile = goToUserProfile;
+window.searchKeyword = searchKeyword;
+window.quickLikePhoto = quickLikePhoto;
 window.togglePhotoPrivacy = togglePhotoPrivacy;
-window.deleteUserAsAdmin = deleteUserAsAdmin;
-window.toggleAdminStatus = toggleAdminStatus;
-window.deleteCommentAsAdmin = deleteCommentAsAdmin;
+window.deleteComment = deleteComment;
+window.loadMorePhotos = loadMorePhotos;
+window.toggleMenu = toggleMenu;
+window.logout = logout;
+window.showNotification = showNotification;
+
+console.log('script.js 加载完成');

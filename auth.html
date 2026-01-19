@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录/注册 - 光影分享</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="nav-container">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-camera"></i>
+                    <span>光影分享</span>
+                </a>
+                <a href="index.html" class="btn-secondary">返回首页</a>
+            </div>
+        </nav>
+
+        <div class="form-container">
+            <div class="form-title">
+                <h2><i class="fas fa-user-circle"></i> 欢迎来到光影分享</h2>
+                <p>分享你的美好瞬间</p>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('login')">登录</button>
+                <button class="tab-btn" onclick="switchTab('register')">注册</button>
+            </div>
+
+            <!-- 登录表单 -->
+            <div id="loginForm" class="form-content">
+                <div class="form-group">
+                    <label for="loginEmail"><i class="fas fa-envelope"></i> 邮箱</label>
+                    <input type="email" id="loginEmail" placeholder="请输入邮箱">
+                </div>
+
+                <div class="form-group">
+                    <label for="loginPassword"><i class="fas fa-lock"></i> 密码</label>
+                    <input type="password" id="loginPassword" placeholder="请输入密码">
+                </div>
+
+                <div class="form-group">
+                    <button class="btn-primary" onclick="login()" style="width: 100%;">
+                        <i class="fas fa-sign-in-alt"></i> 登录
+                    </button>
+                </div>
+
+                <div class="form-footer">
+                    <p>还没有账号？ <a href="#" onclick="switchTab('register')">立即注册</a></p>
+                    <p><a href="#" onclick="resetPassword()">忘记密码？</a></p>
+                </div>
+            </div>
+
+            <!-- 注册表单 -->
+            <div id="registerForm" class="form-content" style="display: none;">
+                <div class="form-group">
+                    <label for="registerUsername"><i class="fas fa-user"></i> 用户名</label>
+                    <input type="text" id="registerUsername" placeholder="请输入用户名">
+                </div>
+
+                <div class="form-group">
+                    <label for="registerEmail"><i class="fas fa-envelope"></i> 邮箱</label>
+                    <input type="email" id="registerEmail" placeholder="请输入邮箱">
+                </div>
+
+                <div class="form-group">
+                    <label for="registerPassword"><i class="fas fa-lock"></i> 密码</label>
+                    <input type="password" id="registerPassword" placeholder="请输入密码（至少6位）">
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword"><i class="fas fa-lock"></i> 确认密码</label>
+                    <input type="password" id="confirmPassword" placeholder="请再次输入密码">
+                </div>
+
+                <div class="form-group">
+                    <button class="btn-primary" onclick="register()" style="width: 100%;">
+                        <i class="fas fa-user-plus"></i> 注册
+                    </button>
+                </div>
+
+                <div class="form-footer">
+                    <p>已有账号？ <a href="#" onclick="switchTab('login')">立即登录</a></p>
+                </div>
+            </div>
+
+            <!-- 错误提示 -->
+            <div id="errorMessage" class="error-message"></div>
+            <div id="successMessage" class="success-message"></div>
+
+            <!-- 第三方登录 -->
+            <div class="social-login">
+                <p style="text-align: center; margin: 20px 0; color: var(--light-text);">或使用其他方式登录</p>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button class="btn-secondary" onclick="signInWithGoogle()">
+                        <i class="fab fa-google"></i> Google
+                    </button>
+                    <button class="btn-secondary" onclick="signInWithGithub()">
+                        <i class="fab fa-github"></i> GitHub
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置信息
+        const SUPABASE_URL = 'https://szrybhleozpzfwhaoiha.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6cnliaGxlb3pwemZ3aGFvaWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NzY2NDQsImV4cCI6MjA4NDI1MjY0NH0.d5xOftdoDnwiRLY8L81RDyj1dRc-LO3RE9n57KilwNU';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 切换标签页
+        function switchTab(tab) {
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            const loginTab = document.querySelector('.tab-btn:first-child');
+            const registerTab = document.querySelector('.tab-btn:last-child');
+            
+            if (tab === 'login') {
+                loginForm.style.display = 'block';
+                registerForm.style.display = 'none';
+                loginTab.classList.add('active');
+                registerTab.classList.remove('active');
+            } else {
+                loginForm.style.display = 'none';
+                registerForm.style.display = 'block';
+                loginTab.classList.remove('active');
+                registerTab.classList.add('active');
+            }
+            
+            // 清空错误信息
+            hideMessages();
+        }
+
+        // 显示消息
+        function showMessage(message, type) {
+            const errorDiv = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('successMessage');
+            
+            if (type === 'error') {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                successDiv.style.display = 'none';
+            } else {
+                successDiv.textContent = message;
+                successDiv.style.display = 'block';
+                errorDiv.style.display = 'none';
+            }
+        }
+
+        // 隐藏消息
+        function hideMessages() {
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        // 登录
+        async function login() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            
+            if (!email || !password) {
+                showMessage('请输入邮箱和密码', 'error');
+                return;
+            }
+            
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password
+            });
+            
+            if (error) {
+                showMessage(error.message, 'error');
+                return;
+            }
+            
+            showMessage('登录成功！正在跳转...', 'success');
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 1500);
+        }
+
+        // 注册
+        async function register() {
+            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value.trim();
+            const confirmPassword = document.getElementById('confirmPassword').value.trim();
+            
+            // 验证输入
+            if (!username || !email || !password || !confirmPassword) {
+                showMessage('请填写所有字段', 'error');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showMessage('密码长度至少为6位', 'error');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showMessage('两次输入的密码不一致', 'error');
+                return;
+            }
+            
+            if (!isValidEmail(email)) {
+                showMessage('请输入有效的邮箱地址', 'error');
+                return;
+            }
+            
+            // 注册用户
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        name: username,
+                        avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`
+                    }
+                }
+            });
+            
+            if (error) {
+                showMessage(error.message, 'error');
+                return;
+            }
+            
+            showMessage('注册成功！请检查邮箱确认（如需要）并登录', 'success');
+            
+            // 自动切换到登录界面
+            setTimeout(() => {
+                switchTab('login');
+                document.getElementById('loginEmail').value = email;
+                document.getElementById('loginPassword').value = password;
+            }, 2000);
+        }
+
+        // 验证邮箱格式
+        function isValidEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+
+        // 重置密码
+        async function resetPassword() {
+            const email = prompt('请输入您的邮箱地址：');
+            if (!email) return;
+            
+            if (!isValidEmail(email)) {
+                alert('请输入有效的邮箱地址');
+                return;
+            }
+            
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/auth.html'
+            });
+            
+            if (error) {
+                alert('发送重置邮件失败：' + error.message);
+            } else {
+                alert('重置密码邮件已发送，请检查您的邮箱');
+            }
+        }
+
+        // Google登录
+        async function signInWithGoogle() {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: window.location.origin + '/index.html'
+                }
+            });
+            
+            if (error) {
+                showMessage(error.message, 'error');
+            }
+        }
+
+        // GitHub登录
+        async function signInWithGithub() {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'github',
+                options: {
+                    redirectTo: window.location.origin + '/index.html'
+                }
+            });
+            
+            if (error) {
+                showMessage(error.message, 'error');
+            }
+        }
+
+        // 回车键登录/注册
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const loginForm = document.getElementById('loginForm');
+                if (loginForm.style.display !== 'none') {
+                    login();
+                } else {
+                    register();
+                }
+            }
+        });
+
+        // 检查是否已登录
+        async function checkAuth() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                window.location.href = 'index.html';
+            }
+        }
+
+        // 页面加载时检查登录状态
+        checkAuth();
+    </script>
+</body>
+</html>
