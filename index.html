@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>光影分享 - 专业的照片分享平台</title>
+    <title>光影分享 - 专业照片分享平台</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.6/viewer.min.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📸</text></svg>">
 </head>
 <body>
     <!-- 导航栏 -->
@@ -15,283 +14,298 @@
         <div class="nav-container">
             <div class="nav-brand">
                 <i class="fas fa-camera"></i>
-                <h1>光影分享</h1>
+                <span>光影分享</span>
             </div>
             
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="搜索关键词...">
-                <button id="searchBtn"><i class="fas fa-search"></i></button>
-            </div>
-            
-            <div class="nav-links">
-                <a href="#" id="homeLink" class="nav-link active">
-                    <i class="fas fa-home"></i> 首页
-                </a>
-                <a href="#" id="uploadLink" class="nav-link">
-                    <i class="fas fa-cloud-upload-alt"></i> 上传
-                </a>
-                <a href="#" id="profileLink" class="nav-link">
-                    <i class="fas fa-user"></i> 我的主页
-                </a>
-                <div class="auth-buttons" id="authButtons">
-                    <button id="loginBtn" class="btn btn-outline">登录</button>
-                    <button id="registerBtn" class="btn btn-primary">注册</button>
+            <div class="nav-search">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="search-input" placeholder="搜索关键词...">
+                    <button id="search-btn">搜索</button>
                 </div>
-                <div class="user-menu" id="userMenu" style="display: none;">
-                    <img id="userAvatar" src="https://ui-avatars.com/api/?name=User&background=bb86fc&color=fff" 
-                         class="avatar-sm" alt="用户头像">
-                    <span id="userName">用户</span>
-                    <div class="dropdown-menu">
-                        <a href="#" id="myProfileLink"><i class="fas fa-user-circle"></i> 我的主页</a>
-                        <a href="#" id="myUploadsLink"><i class="fas fa-images"></i> 我的上传</a>
-                        <a href="#" id="logoutLink"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+            </div>
+            
+            <div class="nav-menu">
+                <a href="#" class="nav-link" id="home-link">
+                    <i class="fas fa-home"></i>
+                    <span>首页</span>
+                </a>
+                <a href="#" class="nav-link" id="upload-link">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>上传</span>
+                </a>
+                <div class="nav-user" id="user-menu">
+                    <div class="user-avatar" id="user-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="user-dropdown" id="user-dropdown">
+                        <div class="user-info" id="user-info">
+                            <div class="user-name">未登录</div>
+                            <div class="user-email">请登录或注册</div>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <a href="#" class="dropdown-item" id="profile-link">
+                            <i class="fas fa-user"></i> 我的主页
+                        </a>
+                        <a href="#" class="dropdown-item" id="logout-btn">
+                            <i class="fas fa-sign-out-alt"></i> 退出登录
+                        </a>
                     </div>
                 </div>
+                <div class="auth-buttons" id="auth-buttons">
+                    <button class="btn btn-outline" id="login-btn">登录</button>
+                    <button class="btn btn-primary" id="register-btn">注册</button>
+                </div>
             </div>
             
-            <button class="mobile-menu-btn" id="mobileMenuBtn">
+            <button class="nav-toggle" id="nav-toggle">
                 <i class="fas fa-bars"></i>
             </button>
         </div>
     </nav>
 
-    <!-- 主内容区域 -->
-    <main class="main-content">
-        <!-- 登录/注册模态框 -->
-        <div id="authModal" class="modal" style="display: none;">
-            <div class="modal-content">
-                <span class="close-modal">&times;</span>
-                <div class="auth-tabs">
-                    <button class="tab-btn active" data-tab="login">登录</button>
-                    <button class="tab-btn" data-tab="register">注册</button>
-                </div>
-                
-                <div id="loginForm" class="auth-form active">
-                    <h3>用户登录</h3>
-                    <div class="form-group">
-                        <label>用户名或邮箱</label>
-                        <input type="text" id="loginIdentifier" placeholder="输入用户名或邮箱">
-                    </div>
-                    <div class="form-group">
-                        <label>密码</label>
-                        <input type="password" id="loginPassword" placeholder="输入密码">
-                    </div>
-                    <button id="submitLogin" class="btn btn-primary btn-block">登录</button>
-                    <p class="auth-error" id="loginError"></p>
-                </div>
-                
-                <div id="registerForm" class="auth-form">
-                    <h3>用户注册</h3>
-                    <div class="form-group">
-                        <label>用户名</label>
-                        <input type="text" id="registerUsername" placeholder="输入用户名">
-                    </div>
-                    <div class="form-group">
-                        <label>邮箱（可选，用于登录）</label>
-                        <input type="email" id="registerEmail" placeholder="输入邮箱">
-                    </div>
-                    <div class="form-group">
-                        <label>密码</label>
-                        <input type="password" id="registerPassword" placeholder="输入密码（至少6位）">
-                    </div>
-                    <button id="submitRegister" class="btn btn-primary btn-block">注册</button>
-                    <p class="auth-error" id="registerError"></p>
-                </div>
-            </div>
-        </div>
-
-        <!-- 上传模态框 -->
-        <div id="uploadModal" class="modal" style="display: none;">
-            <div class="modal-content">
-                <span class="close-modal">&times;</span>
-                <h3>上传照片</h3>
-                <div class="upload-area" id="uploadArea">
-                    <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                    <p>点击或拖拽图片到此处上传</p>
-                    <p class="upload-hint">支持 JPG, PNG, GIF 格式，最大25MB</p>
-                    <input type="file" id="imageInput" accept="image/*" style="display: none;">
-                </div>
-                
-                <div class="preview-container" id="previewContainer" style="display: none;">
-                    <img id="imagePreview" src="" alt="预览">
-                    <button class="btn btn-danger btn-sm" id="removeImage">
-                        <i class="fas fa-times"></i> 移除图片
+    <!-- 主要内容区域 -->
+    <main class="main-container">
+        <!-- 首页/照片流 -->
+        <section class="section active" id="home-section">
+            <div class="section-header">
+                <h2><i class="fas fa-images"></i> 最新照片</h2>
+                <div class="section-controls">
+                    <button class="btn btn-outline" id="refresh-btn">
+                        <i class="fas fa-sync-alt"></i> 刷新
                     </button>
                 </div>
-                
-                <div class="form-group">
-                    <label>关键词（至少一个，用逗号分隔）</label>
-                    <input type="text" id="imageKeywords" placeholder="例如：风景, 自然, 旅行">
-                    <small class="form-hint">多个关键词用逗号分隔</small>
-                </div>
-                
-                <div class="form-group">
-                    <label>描述（可选）</label>
-                    <textarea id="imageDescription" placeholder="添加照片描述..." rows="3"></textarea>
-                </div>
-                
-                <div class="upload-progress" id="uploadProgress" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill"></div>
-                    </div>
-                    <span class="progress-text" id="progressText">0%</span>
-                </div>
-                
-                <button id="submitUpload" class="btn btn-primary btn-block" disabled>
-                    <i class="fas fa-upload"></i> 上传照片
-                </button>
-                <p class="upload-error" id="uploadError"></p>
             </div>
-        </div>
-
-        <!-- 图片详情模态框 -->
-        <div id="imageDetailModal" class="modal" style="display: none;">
-            <div class="modal-content image-detail-content">
-                <span class="close-modal">&times;</span>
-                <div class="image-detail-container">
-                    <div class="image-viewer">
-                        <img id="detailImage" src="" alt="">
-                    </div>
-                    <div class="image-info">
-                        <div class="image-header">
-                            <div class="author-info">
-                                <img id="detailAuthorAvatar" src="" class="avatar-md">
-                                <div>
-                                    <h4 id="detailAuthorName"></h4>
-                                    <span class="post-time" id="detailPostTime"></span>
-                                </div>
-                            </div>
-                            <div class="image-actions">
-                                <button class="btn-like" id="likeButton">
-                                    <i class="far fa-heart"></i>
-                                    <span id="likeCount">0</span>
-                                </button>
-                                <button class="btn-comment" id="commentButton">
-                                    <i class="far fa-comment"></i>
-                                    <span>评论</span>
-                                </button>
-                                <button class="btn-follow" id="followButton">
-                                    <i class="fas fa-user-plus"></i>
-                                    <span>关注</span>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="image-desc">
-                            <p id="detailDescription"></p>
-                            <div class="keywords" id="detailKeywords"></div>
-                        </div>
-                        
-                        <div class="comments-section">
-                            <h4>评论</h4>
-                            <div class="comments-list" id="commentsList"></div>
-                            <div class="add-comment">
-                                <input type="text" id="commentInput" placeholder="添加评论...">
-                                <button id="submitComment" class="btn btn-primary">发送</button>
-                            </div>
-                        </div>
-                    </div>
+            <div class="photo-grid" id="photo-grid">
+                <!-- 照片会动态加载到这里 -->
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>加载照片中...</p>
                 </div>
             </div>
-        </div>
-
-        <!-- 用户主页模态框 -->
-        <div id="profileModal" class="modal" style="display: none;">
-            <div class="modal-content profile-content">
-                <span class="close-modal">&times;</span>
-                <div class="profile-header">
-                    <img id="profileAvatar" src="" class="avatar-lg">
-                    <div class="profile-info">
-                        <h2 id="profileUsername"></h2>
-                        <div class="profile-stats">
-                            <div class="stat">
-                                <span class="stat-number" id="postCount">0</span>
-                                <span class="stat-label">作品</span>
-                            </div>
-                            <div class="stat">
-                                <span class="stat-number" id="followerCount">0</span>
-                                <span class="stat-label">粉丝</span>
-                            </div>
-                            <div class="stat">
-                                <span class="stat-number" id="followingCount">0</span>
-                                <span class="stat-label">关注</span>
-                            </div>
+            <div class="load-more-container">
+                <button class="btn btn-outline" id="load-more-btn">加载更多</button>
+            </div>
+        </section>
+        
+        <!-- 上传照片 -->
+        <section class="section" id="upload-section">
+            <div class="section-header">
+                <h2><i class="fas fa-cloud-upload-alt"></i> 上传照片</h2>
+            </div>
+            <div class="upload-container">
+                <div class="upload-box" id="upload-box">
+                    <div class="upload-icon">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </div>
+                    <h3>拖放照片或点击上传</h3>
+                    <p>支持 JPG, PNG, GIF 格式，最大 25MB</p>
+                    <input type="file" id="file-input" accept="image/*" style="display: none;">
+                    <button class="btn btn-primary" id="select-file-btn">选择照片</button>
+                    <div class="upload-requirements">
+                        <p><i class="fas fa-info-circle"></i> 每次只能上传一张照片，请至少设置一个关键词</p>
+                    </div>
+                </div>
+                
+                <div class="upload-form" id="upload-form" style="display: none;">
+                    <div class="form-group">
+                        <label for="photo-title">照片标题</label>
+                        <input type="text" id="photo-title" placeholder="输入照片标题">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="photo-description">照片描述</label>
+                        <textarea id="photo-description" placeholder="输入照片描述（可选）"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="photo-keywords">关键词 <span class="required">*</span></label>
+                        <div class="keywords-input-container">
+                            <input type="text" id="keyword-input" placeholder="输入关键词后按回车">
+                            <button type="button" class="btn btn-small" id="add-keyword-btn">添加</button>
                         </div>
-                        <button id="followProfileBtn" class="btn btn-primary">
-                            <i class="fas fa-user-plus"></i> 关注
+                        <div class="keywords-tags" id="keywords-tags">
+                            <!-- 关键词标签会动态添加到这里 -->
+                        </div>
+                        <p class="form-hint">至少添加一个关键词，多个关键词用逗号分隔或按回车添加</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>照片预览</label>
+                        <div class="photo-preview" id="photo-preview">
+                            <!-- 照片预览会显示在这里 -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button class="btn btn-outline" id="cancel-upload-btn">取消</button>
+                        <button class="btn btn-primary" id="submit-upload-btn">
+                            <i class="fas fa-upload"></i> 上传照片
                         </button>
                     </div>
                 </div>
                 
-                <div class="profile-tabs">
-                    <button class="profile-tab active" data-tab="uploads">作品</button>
-                    <button class="profile-tab" data-tab="likes">喜欢</button>
-                </div>
-                
-                <div class="profile-gallery" id="profileGallery">
-                    <!-- 用户的图片将在这里显示 -->
-                </div>
-            </div>
-        </div>
-
-        <!-- 主内容区 -->
-        <div class="feed-container" id="feedContainer">
-            <div class="feed-header">
-                <h2><i class="fas fa-fire"></i> 热门照片</h2>
-                <div class="sort-options">
-                    <select id="sortSelect">
-                        <option value="newest">最新</option>
-                        <option value="popular">最受欢迎</option>
-                        <option value="oldest">最早</option>
-                    </select>
+                <div class="upload-progress" id="upload-progress" style="display: none;">
+                    <div class="progress-header">
+                        <h3>上传中...</h3>
+                        <div class="progress-percent" id="progress-percent">0%</div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="upload-status" id="upload-status">
+                        准备上传...
+                    </div>
                 </div>
             </div>
-            
-            <div class="feed-grid" id="feedGrid">
-                <!-- 照片动态将在这里加载 -->
-                <div class="loading-spinner" id="loadingSpinner">
-                    <i class="fas fa-spinner fa-spin"></i>
-                    <p>加载中...</p>
-                </div>
-            </div>
-            
-            <div class="load-more" id="loadMoreContainer" style="display: none;">
-                <button id="loadMoreBtn" class="btn btn-outline">
-                    <i class="fas fa-redo"></i> 加载更多
+        </section>
+        
+        <!-- 用户主页 -->
+        <section class="section" id="profile-section">
+            <div class="section-header">
+                <h2><i class="fas fa-user"></i> 用户主页</h2>
+                <button class="btn btn-outline" id="back-to-home">
+                    <i class="fas fa-arrow-left"></i> 返回首页
                 </button>
             </div>
-            
-            <div class="empty-state" id="emptyState" style="display: none;">
-                <i class="fas fa-camera"></i>
-                <h3>暂无照片</h3>
-                <p>还没有人上传照片，快来上传第一张吧！</p>
+            <div class="profile-container" id="profile-container">
+                <!-- 用户信息和个人照片会动态加载到这里 -->
             </div>
-        </div>
+        </section>
+        
+        <!-- 照片详情/评论 -->
+        <section class="section" id="photo-detail-section" style="display: none;">
+            <div class="section-header">
+                <h2><i class="fas fa-image"></i> 照片详情</h2>
+                <button class="btn btn-outline" id="back-from-detail">
+                    <i class="fas fa-arrow-left"></i> 返回
+                </button>
+            </div>
+            <div class="photo-detail-container" id="photo-detail-container">
+                <!-- 照片详情和评论会动态加载到这里 -->
+            </div>
+        </section>
+        
+        <!-- 搜索结果 -->
+        <section class="section" id="search-section" style="display: none;">
+            <div class="section-header">
+                <h2><i class="fas fa-search"></i> 搜索结果</h2>
+                <button class="btn btn-outline" id="back-from-search">
+                    <i class="fas fa-arrow-left"></i> 返回首页
+                </button>
+            </div>
+            <div class="search-info" id="search-info">
+                <!-- 搜索信息会显示在这里 -->
+            </div>
+            <div class="photo-grid" id="search-results">
+                <!-- 搜索结果会动态加载到这里 -->
+            </div>
+        </section>
     </main>
 
-    <!-- 页脚 -->
-    <footer class="footer">
-        <div class="footer-content">
-            <p>&copy; 2024 光影分享. 保留所有权利.</p>
-            <p class="footer-links">
-                <a href="#" id="aboutLink">关于我们</a>
-                <a href="#" id="contactLink">联系我们</a>
-                <a href="#" id="privacyLink">隐私政策</a>
-                <a href="#" id="termsLink">服务条款</a>
-            </p>
+    <!-- 登录/注册模态框 -->
+    <div class="modal" id="auth-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="auth-modal-title">登录到光影分享</h3>
+                <button class="modal-close" id="auth-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="login-tab">登录</button>
+                    <button class="auth-tab" id="register-tab">注册</button>
+                </div>
+                
+                <form class="auth-form active" id="login-form">
+                    <div class="form-group">
+                        <label for="login-email">邮箱或用户名</label>
+                        <input type="text" id="login-email" placeholder="输入邮箱或用户名" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="login-password">密码</label>
+                        <input type="password" id="login-password" placeholder="输入密码" required>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fas fa-sign-in-alt"></i> 登录
+                        </button>
+                    </div>
+                    
+                    <div class="auth-footer">
+                        <p>还没有账号？ <a href="#" id="switch-to-register">立即注册</a></p>
+                    </div>
+                </form>
+                
+                <form class="auth-form" id="register-form">
+                    <div class="form-group">
+                        <label for="register-username">用户名</label>
+                        <input type="text" id="register-username" placeholder="输入用户名" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="register-email">邮箱</label>
+                        <input type="email" id="register-email" placeholder="输入邮箱" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="register-password">密码</label>
+                        <input type="password" id="register-password" placeholder="输入密码（至少6位）" required minlength="6">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm-password">确认密码</label>
+                        <input type="password" id="confirm-password" placeholder="再次输入密码" required minlength="6">
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fas fa-user-plus"></i> 注册
+                        </button>
+                    </div>
+                    
+                    <div class="auth-footer">
+                        <p>已有账号？ <a href="#" id="switch-to-login">立即登录</a></p>
+                    </div>
+                </form>
+            </div>
         </div>
-    </footer>
+    </div>
 
-    <!-- 脚本 -->
+    <!-- 图片查看器（放大） -->
+    <div class="image-viewer" id="image-viewer">
+        <div class="viewer-header">
+            <button class="viewer-close" id="viewer-close">&times;</button>
+        </div>
+        <div class="viewer-body">
+            <img id="full-size-image" src="" alt="全尺寸图片">
+        </div>
+        <div class="viewer-footer">
+            <div class="image-info" id="viewer-image-info"></div>
+        </div>
+    </div>
+
+    <!-- 全局消息提示 -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner-large"></div>
+        <p>加载中...</p>
+    </div>
+
+    <!-- 引入JavaScript文件 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.6/viewer.min.js"></script>
-    <script src="supabase.js"></script>
-    <script src="cloudinary.js"></script>
+    <script src="supabase-config.js"></script>
+    <script src="cloudinary-config.js"></script>
     <script src="auth.js"></script>
     <script src="upload.js"></script>
-    <script src="feed.js"></script>
-    <script src="profile.js"></script>
+    <script src="gallery.js"></script>
+    <script src="comments.js"></script>
     <script src="admin.js"></script>
-    <script src="app.js"></script>
+    <script src="user-profile.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>

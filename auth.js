@@ -1,803 +1,247 @@
-/**
- * 用户认证管理模块 - 修复版本
- * 处理注册、登录、会话管理和用户资料
- */
-
-// 当前用户状态
-let currentUser = null;
-let currentProfile = null;
-let authStateListeners = [];
-
-// 等待 Supabase 初始化的函数
-async function ensureAuthInitialized() {
-    if (!window.supabaseClient) {
-        console.log('等待 Supabase 初始化...');
-        
-        // 如果 supabaseFunctions 存在，使用它初始化
-        if (window.supabaseFunctions && window.supabaseFunctions.ensureInitialized) {
-            await window.supabaseFunctions.ensureInitialized();
-        } else {
-            // 等待 Supabase 客户端可用
-            await waitForSupabase();
-        }
+// 认证功能模块
+class AuthManager {
+    constructor() {
+        this.currentUser = null;
+        this.isAdmin = false;
+        this.init();
     }
-    return window.supabaseClient;
-}
-
-// 等待 Supabase 可用的函数
-function waitForSupabase() {
-    return new Promise((resolve, reject) => {
-        let attempts = 0;
-        const maxAttempts = 30; // 30次尝试，每次100ms = 3秒超时
-        
-        const checkInterval = setInterval(() => {
-            attempts++;
-            
-            if (window.supabaseClient) {
-                clearInterval(checkInterval);
-                resolve(window.supabaseClient);
-            } else if (attempts >= maxAttempts) {
-                clearInterval(checkInterval);
-                reject(new Error('Supabase 初始化超时 (3秒)'));
-            }
-        }, 100);
-    });
-}
-
-// 初始化认证系统
-async function initAuthSystem() {
-    console.log('正在初始化认证系统...');
     
-    try {
-        // 确保 Supabase 客户端已初始化
-        const supabase = await ensureAuthInitialized();
-        
-        if (!supabase) {
-            throw new Error('Supabase 客户端初始化失败');
-        }
-        
-        // 检查现有会话
-        await checkCurrentSession();
-        
-        // 设置认证状态监听
-        setupAuthStateListener();
-        
-        // 设置自动刷新令牌
-        setupTokenRefresh();
-        
-        console.log('✅ 认证系统初始化完成');
-    } catch (error) {
-        console.error('❌ 认证系统初始化失败:', error);
-    }
-}
-
-// 检查当前会话
-async function checkCurrentSession() {
-    try {
-        const supabase = await ensureAuthInitialized();
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-            console.error('获取会话错误:', error);
-            setAuthState(null, null);
-            return;
-        }
-        
+    // 初始化认证模块
+    async init() {
+        // 检查当前会话
+        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-            console.log('发现现有会话，用户ID:', session.user.id);
-            await handleUserSession(session.user);
-        } else {
-            console.log('没有发现会话，用户未登录');
-            setAuthState(null, null);
+            this.currentUser = session.user;
+            this.checkAdminStatus();
+            this.updateUI();
         }
-    } catch (error) {
-        console.error('检查会话错误:', error);
-        setAuthState(null, null);
-    }
-}
-
-// 处理用户会话
-async function handleUserSession(user) {
-    try {
-        currentUser = user;
         
-        // 加载用户资料
-        await loadUserProfile();
-        
-        // 设置认证状态
-        setAuthState(user, currentProfile);
-        
-        console.log('用户会话处理完成:', user.id);
-    } catch (error) {
-        console.error('处理用户会话错误:', error);
-        setAuthState(null, null);
-    }
-}
-
-// 加载用户资料
-async function loadUserProfile() {
-    if (!currentUser) {
-        currentProfile = null;
-        return null;
+        // 监听认证状态变化
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                this.currentUser = session.user;
+                this.checkAdminStatus();
+                this.updateUI();
+                this.showToast('登录成功', 'success');
+            } else if (event === 'SIGNED_OUT') {
+                this.currentUser = null;
+                this.isAdmin = false;
+                this.updateUI();
+            }
+        });
     }
     
-    try {
-        const supabase = await ensureAuthInitialized();
+    // 检查是否为管理员
+    checkAdminStatus() {
+        if (this.currentUser && this.currentUser.email === ADMIN_EMAIL) {
+            this.isAdmin = true;
+        } else {
+            this.isAdmin = false;
+        }
+    }
+    
+    // 更新UI显示
+    updateUI() {
+        const authButtons = document.getElementById('auth-buttons');
+        const userMenu = document.getElementById('user-menu');
+        const userInfo = document.getElementById('user-info');
         
-        // 尝试从profiles表获取资料
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', currentUser.id)
-            .single();
-        
-        if (error) {
-            // 如果资料不存在，创建新资料
-            if (error.code === 'PGRST116') { // 未找到
-                console.log('用户资料不存在，正在创建...');
-                currentProfile = await createUserProfile();
-            } else {
-                console.error('加载用户资料错误:', error);
-                currentProfile = null;
+        if (this.currentUser) {
+            // 用户已登录
+            authButtons.style.display = 'none';
+            userMenu.style.display = 'block';
+            
+            // 更新用户信息
+            const userName = this.currentUser.user_metadata?.username || this.currentUser.email?.split('@')[0] || '用户';
+            const userEmail = this.currentUser.email || '';
+            
+            userInfo.innerHTML = `
+                <div class="user-name">${userName}</div>
+                <div class="user-email">${userEmail}</div>
+            `;
+            
+            // 更新头像
+            const userAvatar = document.getElementById('user-avatar');
+            userAvatar.innerHTML = `<i class="fas fa-user-circle"></i>`;
+            
+            // 显示管理员标识
+            if (this.isAdmin) {
+                userInfo.innerHTML += '<div class="admin-badge">管理员</div>';
             }
         } else {
-            currentProfile = profile;
+            // 用户未登录
+            authButtons.style.display = 'flex';
+            userMenu.style.display = 'none';
         }
-        
-        return currentProfile;
-    } catch (error) {
-        console.error('加载用户资料过程错误:', error);
-        currentProfile = null;
-        return null;
-    }
-}
-
-// 创建用户资料
-async function createUserProfile() {
-    if (!currentUser) {
-        throw new Error('用户未登录，无法创建资料');
     }
     
-    try {
-        const supabase = await ensureAuthInitialized();
-        
-        // 从用户元数据或邮箱获取用户名
-        const username = currentUser.user_metadata?.username || 
-                        currentUser.email?.split('@')[0] || 
-                        `user_${currentUser.id.substring(0, 8)}`;
-        
-        // 清理用户名（移除特殊字符）
-        const cleanUsername = username.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
-        
-        // 生成头像URL
-        const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanUsername)}&background=bb86fc&color=fff&size=256`;
-        
-        // 创建资料记录
-        const profileData = {
-            id: currentUser.id,
-            username: cleanUsername,
-            email: currentUser.email,
-            avatar_url: avatarUrl,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-        
-        const { data, error } = await supabase
-            .from('profiles')
-            .insert([profileData])
-            .select()
-            .single();
-        
-        if (error) {
-            // 如果用户名冲突，尝试其他用户名
-            if (error.code === '23505') { // 唯一约束违反
-                const uniqueUsername = `${cleanUsername}_${currentUser.id.substring(0, 4)}`;
-                profileData.username = uniqueUsername;
-                
-                const { data: retryData, error: retryError } = await supabase
+    // 注册新用户
+    async register(username, email, password) {
+        try {
+            this.showLoading(true);
+            
+            // 注册用户
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        username
+                    }
+                }
+            });
+            
+            if (error) throw error;
+            
+            // 创建用户配置文件
+            if (data.user) {
+                const { error: profileError } = await supabase
                     .from('profiles')
-                    .insert([profileData])
-                    .select()
+                    .insert([
+                        { 
+                            id: data.user.id, 
+                            username, 
+                            email,
+                            created_at: new Date().toISOString()
+                        }
+                    ]);
+                
+                if (profileError) {
+                    console.error('创建用户配置文件失败:', profileError);
+                }
+            }
+            
+            this.showToast('注册成功！请检查您的邮箱以验证账户。', 'success');
+            return { success: true };
+        } catch (error) {
+            console.error('注册失败:', error);
+            this.showToast(`注册失败: ${error.message}`, 'error');
+            return { success: false, error };
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    // 登录
+    async login(identifier, password) {
+        try {
+            this.showLoading(true);
+            
+            // 检查identifier是邮箱还是用户名
+            let email = identifier;
+            
+            // 如果是用户名，需要先查找对应的邮箱
+            if (!identifier.includes('@')) {
+                const { data: profiles, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('email')
+                    .eq('username', identifier)
                     .single();
                 
-                if (retryError) throw retryError;
-                
-                console.log('用户资料创建成功（使用唯一用户名）:', uniqueUsername);
-                return retryData;
-            }
-            throw error;
-        }
-        
-        console.log('用户资料创建成功:', cleanUsername);
-        return data;
-    } catch (error) {
-        console.error('创建用户资料错误:', error);
-        throw error;
-    }
-}
-
-// 用户注册
-async function registerUser(userData) {
-    try {
-        const supabase = await ensureAuthInitialized();
-        const { username, email, password } = userData;
-        
-        // 验证输入
-        if (!username || username.length < 3) {
-            throw new Error('用户名至少需要3个字符');
-        }
-        
-        if (!email || !isValidEmail(email)) {
-            throw new Error('请输入有效的邮箱地址');
-        }
-        
-        if (!password || password.length < 6) {
-            throw new Error('密码至少需要6个字符');
-        }
-        
-        // 清理用户名
-        const cleanUsername = username.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
-        
-        // 检查用户名是否已存在
-        const { data: existingUser } = await supabase
-            .from('profiles')
-            .select('username')
-            .eq('username', cleanUsername)
-            .single();
-        
-        if (existingUser) {
-            throw new Error('用户名已被使用，请选择其他用户名');
-        }
-        
-        // 注册新用户
-        const { data, error } = await supabase.auth.signUp({
-            email: email.trim(),
-            password: password,
-            options: {
-                data: {
-                    username: cleanUsername,
-                    created_at: new Date().toISOString()
+                if (profileError || !profiles) {
+                    throw new Error('用户名或密码错误');
                 }
-            }
-        });
-        
-        if (error) {
-            console.error('注册错误:', error);
-            
-            if (error.message.includes('User already registered')) {
-                throw new Error('邮箱已被注册');
-            } else if (error.message.includes('Password should be at least')) {
-                throw new Error('密码太短');
-            } else {
-                throw new Error(error.message);
-            }
-        }
-        
-        console.log('用户注册成功:', data.user.id);
-        
-        // 如果自动登录，处理会话
-        if (data.session) {
-            await handleUserSession(data.user);
-        }
-        
-        return {
-            success: true,
-            user: data.user,
-            message: '注册成功！请检查您的邮箱以验证账户。'
-        };
-    } catch (error) {
-        console.error('注册过程错误:', error);
-        throw error;
-    }
-}
-
-// 用户登录
-async function loginUser(credentials) {
-    try {
-        const supabase = await ensureAuthInitialized();
-        const { identifier, password } = credentials;
-        
-        // 验证输入
-        if (!identifier || !password) {
-            throw new Error('请输入用户名/邮箱和密码');
-        }
-        
-        let email = identifier;
-        
-        // 如果标识符不包含@，尝试查找用户名对应的邮箱
-        if (!identifier.includes('@')) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('email')
-                .eq('username', identifier)
-                .single();
-            
-            if (!profile) {
-                throw new Error('用户不存在');
-            }
-            
-            email = profile.email;
-        }
-        
-        // 执行登录
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password: password
-        });
-        
-        if (error) {
-            console.error('登录错误:', error);
-            
-            if (error.message.includes('Invalid login credentials')) {
-                throw new Error('用户名或密码错误');
-            } else if (error.message.includes('Email not confirmed')) {
-                throw new Error('邮箱未验证，请先验证您的邮箱');
-            } else {
-                throw new Error(error.message);
-            }
-        }
-        
-        console.log('用户登录成功:', data.user.id);
-        
-        // 处理会话
-        await handleUserSession(data.user);
-        
-        return {
-            success: true,
-            user: data.user,
-            session: data.session
-        };
-    } catch (error) {
-        console.error('登录过程错误:', error);
-        throw error;
-    }
-}
-
-// 邮箱登录
-async function loginWithEmail(email, password) {
-    return loginUser({ identifier: email, password });
-}
-
-// 用户名登录
-async function loginWithUsername(username, password) {
-    return loginUser({ identifier: username, password });
-}
-
-// 用户退出登录
-async function logoutUser() {
-    try {
-        const supabase = await ensureAuthInitialized();
-        const { error } = await supabase.auth.signOut();
-        
-        if (error) throw error;
-        
-        // 清除本地状态
-        currentUser = null;
-        currentProfile = null;
-        
-        // 通知监听器
-        setAuthState(null, null);
-        
-        console.log('用户退出登录成功');
-        
-        return { success: true };
-    } catch (error) {
-        console.error('退出登录错误:', error);
-        throw error;
-    }
-}
-
-// 设置认证状态监听
-async function setupAuthStateListener() {
-    try {
-        const supabase = await ensureAuthInitialized();
-        
-        supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log('认证状态变化:', event, session?.user?.id);
-            
-            switch (event) {
-                case 'SIGNED_IN':
-                    if (session) {
-                        await handleUserSession(session.user);
-                        showNotification('登录成功！', 'success');
-                    }
-                    break;
-                    
-                case 'SIGNED_OUT':
-                    currentUser = null;
-                    currentProfile = null;
-                    setAuthState(null, null);
-                    showNotification('已退出登录', 'info');
-                    break;
-                    
-                case 'USER_UPDATED':
-                    if (session) {
-                        currentUser = session.user;
-                        setAuthState(currentUser, currentProfile);
-                    }
-                    break;
-                    
-                case 'TOKEN_REFRESHED':
-                    console.log('令牌已刷新');
-                    break;
-                    
-                case 'PASSWORD_RECOVERY':
-                    console.log('密码恢复流程');
-                    break;
-            }
-        });
-    } catch (error) {
-        console.error('设置认证状态监听错误:', error);
-    }
-}
-
-// 设置令牌自动刷新
-async function setupTokenRefresh() {
-    // 每5分钟检查一次令牌
-    setInterval(async () => {
-        if (currentUser) {
-            try {
-                const supabase = await ensureAuthInitialized();
-                const { data: { session }, error } = await supabase.auth.getSession();
                 
-                if (error) {
-                    console.error('刷新令牌检查错误:', error);
-                } else if (session) {
-                    // 检查令牌是否快要过期（剩余时间小于5分钟）
-                    const expiresAt = new Date(session.expires_at).getTime();
-                    const now = Date.now();
-                    const timeLeft = expiresAt - now;
-                    
-                    if (timeLeft < 5 * 60 * 1000) {
-                        console.log('令牌即将过期，正在刷新...');
-                        await supabase.auth.refreshSession();
-                    }
-                }
-            } catch (error) {
-                console.error('令牌刷新错误:', error);
+                email = profiles.email;
             }
-        }
-    }, 5 * 60 * 1000); // 5分钟
-}
-
-// 设置认证状态
-function setAuthState(user, profile) {
-    currentUser = user;
-    currentProfile = profile;
-    
-    // 通知所有监听器
-    authStateListeners.forEach(listener => {
-        try {
-            listener(user, profile);
-        } catch (error) {
-            console.error('认证状态监听器错误:', error);
-        }
-    });
-    
-    // 更新UI
-    updateAuthUI();
-}
-
-// 更新认证UI
-function updateAuthUI() {
-    const authButtons = document.getElementById('authButtons');
-    const userMenu = document.getElementById('userMenu');
-    const uploadLink = document.getElementById('uploadLink');
-    
-    if (currentUser) {
-        // 用户已登录
-        if (authButtons) authButtons.style.display = 'none';
-        if (userMenu) userMenu.style.display = 'flex';
-        if (uploadLink) uploadLink.style.display = 'block';
-        
-        // 更新用户信息
-        updateUserInfo();
-    } else {
-        // 用户未登录
-        if (authButtons) authButtons.style.display = 'flex';
-        if (userMenu) userMenu.style.display = 'none';
-        if (uploadLink) uploadLink.style.display = 'none';
-    }
-}
-
-// 更新用户信息
-function updateUserInfo() {
-    const userAvatar = document.getElementById('userAvatar');
-    const userName = document.getElementById('userName');
-    const profileAvatar = document.getElementById('profileAvatar');
-    const profileUsername = document.getElementById('profileUsername');
-    
-    if (currentProfile) {
-        // 更新导航栏用户信息
-        if (userAvatar) {
-            userAvatar.src = currentProfile.avatar_url || 
-                           `https://ui-avatars.com/api/?name=${encodeURIComponent(currentProfile.username)}&background=bb86fc&color=fff`;
-        }
-        
-        if (userName) {
-            userName.textContent = currentProfile.username || '用户';
-        }
-        
-        // 更新个人主页信息（如果打开）
-        if (profileAvatar && profileAvatar.src.includes('ui-avatars.com')) {
-            profileAvatar.src = currentProfile.avatar_url || 
-                              `https://ui-avatars.com/api/?name=${encodeURIComponent(currentProfile.username)}&background=bb86fc&color=fff`;
-        }
-        
-        if (profileUsername && !profileUsername.textContent) {
-            profileUsername.textContent = currentProfile.username || '用户';
-        }
-    }
-}
-
-// 获取当前用户
-function getCurrentUser() {
-    return currentUser;
-}
-
-// 获取当前用户资料
-function getCurrentProfile() {
-    return currentProfile;
-}
-
-// 检查是否登录
-function isAuthenticated() {
-    return !!currentUser;
-}
-
-// 添加认证状态监听器
-function addAuthStateListener(listener) {
-    if (typeof listener === 'function') {
-        authStateListeners.push(listener);
-        
-        // 立即调用一次以获取当前状态
-        try {
-            listener(currentUser, currentProfile);
-        } catch (error) {
-            console.error('初始认证状态监听器错误:', error);
-        }
-    }
-}
-
-// 移除认证状态监听器
-function removeAuthStateListener(listener) {
-    const index = authStateListeners.indexOf(listener);
-    if (index > -1) {
-        authStateListeners.splice(index, 1);
-    }
-}
-
-// 更新用户资料
-async function updateUserProfile(updates) {
-    if (!currentUser) {
-        throw new Error('用户未登录');
-    }
-    
-    try {
-        const supabase = await ensureAuthInitialized();
-        
-        // 如果更新用户名，检查是否重复
-        if (updates.username) {
-            const { data: existingUser } = await supabase
-                .from('profiles')
-                .select('username')
-                .eq('username', updates.username)
-                .neq('id', currentUser.id)
-                .single();
             
-            if (existingUser) {
-                throw new Error('用户名已被使用');
-            }
+            // 使用邮箱登录
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password
+            });
+            
+            if (error) throw error;
+            
+            this.showToast('登录成功！', 'success');
+            return { success: true };
+        } catch (error) {
+            console.error('登录失败:', error);
+            this.showToast(`登录失败: ${error.message}`, 'error');
+            return { success: false, error };
+        } finally {
+            this.showLoading(false);
         }
-        
-        const { data, error } = await supabase
-            .from('profiles')
-            .update({
-                ...updates,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', currentUser.id)
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
-        // 更新本地状态
-        currentProfile = data;
-        
-        // 通知监听器
-        setAuthState(currentUser, currentProfile);
-        
-        // 显示成功消息
-        showNotification('资料更新成功', 'success');
-        
-        return data;
-    } catch (error) {
-        console.error('更新用户资料错误:', error);
-        throw error;
-    }
-}
-
-// 更新用户头像
-async function updateUserAvatar(avatarUrl) {
-    if (!currentUser) {
-        throw new Error('用户未登录');
     }
     
-    try {
-        return await updateUserProfile({ avatar_url: avatarUrl });
-    } catch (error) {
-        console.error('更新用户头像错误:', error);
-        throw error;
-    }
-}
-
-// 发送密码重置邮件
-async function resetPassword(email) {
-    try {
-        const supabase = await ensureAuthInitialized();
-        
-        if (!email || !isValidEmail(email)) {
-            throw new Error('请输入有效的邮箱地址');
+    // 退出登录
+    async logout() {
+        try {
+            this.showLoading(true);
+            const { error } = await supabase.auth.signOut();
+            
+            if (error) throw error;
+            
+            this.showToast('已退出登录', 'success');
+            return { success: true };
+        } catch (error) {
+            console.error('退出登录失败:', error);
+            this.showToast(`退出登录失败: ${error.message}`, 'error');
+            return { success: false, error };
+        } finally {
+            this.showLoading(false);
         }
-        
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/reset-password`
-        });
-        
-        if (error) throw error;
-        
-        return {
-            success: true,
-            message: '密码重置邮件已发送，请检查您的邮箱。'
-        };
-    } catch (error) {
-        console.error('发送密码重置邮件错误:', error);
-        throw error;
     }
-}
-
-// 更新密码
-async function updatePassword(newPassword) {
-    try {
-        const supabase = await ensureAuthInitialized();
-        
-        if (!newPassword || newPassword.length < 6) {
-            throw new Error('密码至少需要6个字符');
+    
+    // 获取当前用户信息
+    getCurrentUser() {
+        return this.currentUser;
+    }
+    
+    // 检查是否已登录
+    isLoggedIn() {
+        return !!this.currentUser;
+    }
+    
+    // 检查是否为管理员
+    isUserAdmin() {
+        return this.isAdmin;
+    }
+    
+    // 显示加载动画
+    showLoading(show) {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (show) {
+            loadingOverlay.classList.add('active');
+        } else {
+            loadingOverlay.classList.remove('active');
         }
+    }
+    
+    // 显示消息提示
+    showToast(message, type = 'info', duration = 5000) {
+        const toastContainer = document.getElementById('toast-container');
         
-        const { error } = await supabase.auth.updateUser({
-            password: newPassword
-        });
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
         
-        if (error) throw error;
+        let icon = 'info-circle';
+        if (type === 'success') icon = 'check-circle';
+        if (type === 'error') icon = 'exclamation-circle';
+        if (type === 'warning') icon = 'exclamation-triangle';
         
-        showNotification('密码更新成功', 'success');
+        toast.innerHTML = `
+            <i class="fas fa-${icon}"></i>
+            <div class="toast-content">
+                <div class="toast-title">${type === 'success' ? '成功' : type === 'error' ? '错误' : type === 'warning' ? '警告' : '信息'}</div>
+                <div class="toast-message">${message}</div>
+            </div>
+            <button class="toast-close">&times;</button>
+        `;
         
-        return { success: true };
-    } catch (error) {
-        console.error('更新密码错误:', error);
-        throw error;
-    }
-}
-
-// 验证邮箱格式
-function isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-}
-
-// 显示通知
-function showNotification(message, type = 'info') {
-    // 这里可以集成一个通知系统
-    console.log(`${type.toUpperCase()}: ${message}`);
-    
-    // 简单实现：使用alert或console
-    if (type === 'error') {
-        console.error(message);
-    } else if (type === 'success') {
-        console.log(message);
-    }
-    
-    // 在实际应用中，这里应该更新UI显示通知
-    if (window.showNotification) {
-        window.showNotification(message, type);
-    }
-}
-
-// 简化版认证函数（用于HTML按钮直接调用）
-async function handleSignUp() {
-    const email = document.getElementById('email')?.value;
-    const password = document.getElementById('password')?.value;
-    const username = document.getElementById('username')?.value || email?.split('@')[0];
-    
-    if (!email || !password) {
-        alert('请输入邮箱和密码');
-        return;
-    }
-    
-    try {
-        const result = await registerUser({ username, email, password });
-        alert(result.message || '注册成功！');
-    } catch (error) {
-        alert('注册失败: ' + error.message);
-    }
-}
-
-async function handleSignIn() {
-    const identifier = document.getElementById('identifier')?.value;
-    const password = document.getElementById('password')?.value;
-    
-    if (!identifier || !password) {
-        alert('请输入用户名/邮箱和密码');
-        return;
-    }
-    
-    try {
-        const result = await loginUser({ identifier, password });
-        alert('登录成功！');
-        // 刷新页面或跳转
+        toastContainer.appendChild(toast);
+        
+        // 自动移除提示
         setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-    } catch (error) {
-        alert('登录失败: ' + error.message);
+            toast.remove();
+        }, duration);
+        
+        // 点击关闭
+        toast.querySelector('.toast-close').addEventListener('click', () => {
+            toast.remove();
+        });
     }
 }
 
-// 导出函数
-window.auth = {
-    // 初始化
-    init: initAuthSystem,
-    
-    // 用户操作
-    register: registerUser,
-    login: loginUser,
-    loginWithEmail,
-    loginWithUsername,
-    logout: logoutUser,
-    
-    // 用户资料
-    getCurrentUser,
-    getCurrentProfile,
-    updateProfile: updateUserProfile,
-    updateAvatar: updateUserAvatar,
-    
-    // 状态检查
-    isAuthenticated,
-    
-    // 监听器
-    addAuthStateListener,
-    removeAuthStateListener,
-    
-    // 密码管理
-    resetPassword,
-    updatePassword,
-    
-    // 工具函数
-    isValidEmail,
-    
-    // 简化版函数（用于HTML直接调用）
-    handleSignUp,
-    handleSignIn,
-    
-    // 确保初始化
-    ensureInitialized: ensureAuthInitialized
-};
-
-// 自动初始化
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM 加载完成，开始初始化认证系统');
-    
-    // 延迟初始化，确保 Supabase 先初始化
-    setTimeout(async () => {
-        try {
-            await initAuthSystem();
-            console.log('✅ 认证系统自动初始化完成');
-        } catch (error) {
-            console.error('❌ 认证系统自动初始化失败:', error);
-        }
-    }, 1000);
-});
-
-console.log('✅ 认证模块完整加载完成');
+// 创建全局认证管理器实例
+window.authManager = new AuthManager();
